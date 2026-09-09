@@ -6,7 +6,7 @@ The web UI behaves like an architecture interview. The backend extracts semantic
 
 ## Why this shape
 
-The Forger deliberately separates three responsibilities:
+The Forger deliberately separates responsibilities:
 
 ```text
 User conversation
@@ -16,7 +16,7 @@ Semantic interviewer / extractor
 Backend MCP client
       ↓ tool calls
 Governed Blueprint materializer
-      ↓
+      ↓ pinned Blueprint renderer
 AllasCode project tree
       ↓ finalize
 Repository review gate
@@ -39,6 +39,28 @@ This keeps LLM reasoning probabilistic while project mutation is deterministic. 
 - Repository publication is impossible without an explicit, fresh diff review.
 
 The materializer covers Agents, Entities/Properties, semantic Types, Contexts, Intents, AtomicAction Behaviors, Domain Actions, Flows, Events, Policies, Constraints, Capabilities, Infrastructure and architecture decisions.
+
+## Pinned AllasCode-Blueprint source
+
+Generation is reproducible against `blueprint.lock.json`. The lock currently pins:
+
+```text
+suissa/AllasCode-Blueprint
+838f8488adcf5bc7e109efe8ebcf8a5380af1872
+```
+
+The lock records the Git blob SHA of every upstream structural/schema source used by the renderer. CI downloads those exact files from the pinned commit and recalculates Git blob hashes before allowing the application build to pass.
+
+```bash
+npm run blueprint:verify
+npm run blueprint:sync
+```
+
+`blueprint:verify` verifies the remote pin without writing a cache. `blueprint:sync` performs the same integrity verification and stores the exact pinned sources under `.forger-cache/blueprint/<commit>/` for inspection/offline tooling.
+
+Every generated project receives `.allascode/blueprint.lock.json` and `docs/BLUEPRINT_SOURCE.md`, so its source structure and compatibility policy remain traceable after ZIP export or GitHub publication.
+
+The pinned Blueprint contains some older prose examples using `success/failure`. Those examples are treated as legacy documentation, not current runtime semantics. The compatibility overlay in `blueprint.lock.json` makes current AllasCode rules authoritative: Action terminal consequences are exactly `Ok` and `Error`, are non-configurable, and `Error` enters mandatory self-healing.
 
 ## Run
 
@@ -127,6 +149,6 @@ The publisher overlays only generated files. Existing remote files that are abse
 
 ## AtomicAction output
 
-When the conversation yields an Action, the MCP materializer immediately creates a package with human docs, manifest/config/interface, schemas, fixed Ok/Error events, invariant/forbidden/self-healing specifications, a micro `SKILL.md`, and an implementation placeholder. Later interview turns refine the same canonical artifact rather than creating duplicates.
+When the conversation yields an Action, the MCP materializer immediately creates a package with human docs, manifest/config/interface, schemas, fixed Ok/Error events, invariant/forbidden/self-healing specifications, a micro `SKILL.md`, and an implementation placeholder. Its source provenance records the exact pinned Blueprint commit. Later interview turns refine the same canonical artifact rather than creating duplicates.
 
 See [`skills/allascode-project-forger/SKILL.md`](skills/allascode-project-forger/SKILL.md) for the backend agent operating protocol and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the roadmap.
