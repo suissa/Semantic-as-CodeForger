@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ForgeState, SemanticArtifact } from '../shared/types.js';
+import { checkpointSessionLease } from './session-mutation.js';
 
 export type InterviewEvent =
   | {
@@ -38,6 +39,7 @@ function logPath(sessionDirectory: string): string {
 }
 
 export async function initializeInterviewEventLog(sessionDirectory: string, state: ForgeState): Promise<void> {
+  await checkpointSessionLease();
   await mkdir(sessionDirectory, { recursive: true });
   const event: InterviewEvent = {
     sequence: 1,
@@ -51,6 +53,7 @@ export async function initializeInterviewEventLog(sessionDirectory: string, stat
       createdAt: state.createdAt
     }
   };
+  await checkpointSessionLease();
   await writeFile(logPath(sessionDirectory), `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'wx' });
 }
 
@@ -65,6 +68,7 @@ export async function readInterviewEvents(sessionDirectory: string): Promise<Int
 }
 
 export async function appendInterviewEvent(sessionDirectory: string, input: EventInput): Promise<InterviewEvent> {
+  await checkpointSessionLease();
   const events = await readInterviewEvents(sessionDirectory);
   if (events.length === 0) throw new Error('Interview event log is not initialized');
   const event = {
@@ -72,6 +76,7 @@ export async function appendInterviewEvent(sessionDirectory: string, input: Even
     at: new Date().toISOString(),
     ...input
   } as InterviewEvent;
+  await checkpointSessionLease();
   await appendFile(logPath(sessionDirectory), `${JSON.stringify(event)}\n`, 'utf8');
   return event;
 }
@@ -124,7 +129,9 @@ export async function replayInterviewState(sessionDirectory: string): Promise<Fo
 }
 
 export async function exportInterviewEventLog(sessionDirectory: string, projectDirectory: string): Promise<void> {
+  await checkpointSessionLease();
   const events = await readInterviewEvents(sessionDirectory);
   await mkdir(join(projectDirectory, '.allascode'), { recursive: true });
+  await checkpointSessionLease();
   await writeFile(join(projectDirectory, '.allascode/interview-events.ndjson'), events.map((event) => JSON.stringify(event)).join('\n') + '\n', 'utf8');
 }
