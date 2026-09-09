@@ -22,6 +22,12 @@ function asyncRoute(handler: (req: express.Request, res: express.Response) => Pr
   });
 }
 
+function routeParam(req: express.Request, name: string): string {
+  const value = req.params[name];
+  if (typeof value !== 'string' || !value) throw new Error(`Missing route parameter: ${name}`);
+  return value;
+}
+
 async function sessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
   const payload = await mcp.call<{ state: ForgeState; tree: string[]; validation: ValidationFinding[] }>('forger_session_snapshot', { sessionId });
   const phaseIndex = Math.min(payload.state.phaseIndex, interviewPhases.length - 1);
@@ -54,11 +60,11 @@ app.post('/api/sessions', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/sessions/:sessionId', asyncRoute(async (req, res) => {
-  res.json(await sessionSnapshot(req.params.sessionId));
+  res.json(await sessionSnapshot(routeParam(req, 'sessionId')));
 }));
 
 app.post('/api/sessions/:sessionId/messages', asyncRoute(async (req, res) => {
-  const sessionId = req.params.sessionId;
+  const sessionId = routeParam(req, 'sessionId');
   const message = String(req.body?.message ?? '').trim();
   if (!message) { res.status(400).json({ error: 'message is required' }); return; }
 
@@ -90,12 +96,13 @@ app.post('/api/sessions/:sessionId/messages', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/sessions/:sessionId/finalize', asyncRoute(async (req, res) => {
-  await mcp.call('forger_finalize', { sessionId: req.params.sessionId });
-  res.json(await sessionSnapshot(req.params.sessionId));
+  const sessionId = routeParam(req, 'sessionId');
+  await mcp.call('forger_finalize', { sessionId });
+  res.json(await sessionSnapshot(sessionId));
 }));
 
 app.get('/api/sessions/:sessionId/export', asyncRoute(async (req, res) => {
-  const sessionId = req.params.sessionId;
+  const sessionId = routeParam(req, 'sessionId');
   await sessionSnapshot(sessionId);
   const directory = getProjectDirectory(sessionId);
   res.attachment(`allascode-${sessionId}.zip`);
