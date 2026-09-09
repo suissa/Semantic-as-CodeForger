@@ -28,10 +28,13 @@ export class ForgerMcpClient {
 
   async call<T>(name: string, args: Record<string, unknown>): Promise<T> {
     const client = await this.getClient();
-    const result = await client.callTool({ name, arguments: args });
+    const result = await client.callTool({ name, arguments: args }) as { content?: unknown };
+    if (!Array.isArray(result.content)) throw new Error(`MCP tool ${name} returned an invalid content payload`);
     const first = result.content[0];
-    if (!first || first.type !== 'text') throw new Error(`MCP tool ${name} returned no text payload`);
-    return JSON.parse(first.text) as T;
+    if (!first || typeof first !== 'object') throw new Error(`MCP tool ${name} returned no payload`);
+    const item = first as { type?: unknown; text?: unknown };
+    if (item.type !== 'text' || typeof item.text !== 'string') throw new Error(`MCP tool ${name} returned no text payload`);
+    return JSON.parse(item.text) as T;
   }
 
   async close(): Promise<void> {
