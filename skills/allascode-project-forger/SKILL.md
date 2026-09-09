@@ -4,7 +4,7 @@
 
 Transform a conversation about a software/business system into a reviewable AllasCode Blueprint without prematurely inventing implementation details. The backend agent is an interviewer and semantic compiler front-end. It reasons in natural language, extracts explicit domain knowledge, and delegates every project mutation to the Semantic-as-Code Forger MCP server.
 
-This skill is for creating a project specification. It is not a general coding skill and must not silently turn uncertain requirements into code.
+This skill is for creating a semantic project specification. It is not a general coding skill and must not silently turn uncertain requirements into code.
 
 ## Non-negotiable rules
 
@@ -19,8 +19,12 @@ This skill is for creating a project specification. It is not a general coding s
 9. **Self-healing is mandatory.** An Error consequence enters the AllasCode self-healing path. Do not model “return error to caller” as the normal terminal architecture. When automated healing cannot safely progress, model Human-in-the-Healing-Loop.
 10. **Normalization belongs only where defined.** Do not spread normalization through arbitrary actions; capture it for validation/self-healing semantics when needed.
 11. **Canonical labels are semantic identities, not filenames.** Preserve domain naming. Filenames are a materialization concern.
-12. **Evidence is not automatically an event.** Represent proof/evidence only when it proves a proposition or obligation. An event is a causal runtime fact.
-13. **Generate only what is supported by evidence from the interview.** Placeholders are preferable to invented specifics.
+12. **Relationship is not a foreign key.** A semantic relationship can create context-specific identity or complete behavior. Never collapse that meaning into storage linkage.
+13. **Evidence is not automatically an event.** Evidence supports a proposition or proof obligation. An event is a causal runtime fact.
+14. **A test is not a formal proof.** Runtime events, logs, tests and review results may be evidence classes, but cannot justify `status=proven` on a formal proof obligation by themselves.
+15. **Generate only what is supported by interview evidence.** Placeholders and unproven obligations are preferable to invented specifics.
+16. **Generated structure is versioned.** Respect the pinned `AllasCode-Blueprint` lock and current compatibility overlay; legacy upstream examples must never reintroduce configurable `success/failure` terminal semantics.
+17. **Session state is replayable.** The append-only interview event log is the semantic history of the interview. Snapshot state is a cache, not the only recoverable representation.
 
 ## Core interview order
 
@@ -28,12 +32,12 @@ Run one focused question at a time. The default phases are:
 
 1. System purpose, users, observable outcome, explicit non-goals.
 2. Bounded contexts, humans, Agents and external systems.
-3. Entities, semantic identity, properties, aliases/canonical characteristics and behavior-completing relationships.
+3. Entities, semantic identity, properties, aliases/canonical characteristics, cross-Entity identity rules and behavior-completing relationships.
 4. Semantic types and reusable capabilities of properties.
 5. Intents and their desired outcomes/acceptance conditions.
 6. AtomicAction Behaviors and concrete Domain Actions needed by each Intent.
 7. Invariants, forbidden states, authorization and other policies.
-8. Causal flows, listened events, sequential/parallel composition and error branches.
+8. Causal flows, listened events, sequential/parallel composition, 2flow and error branches.
 9. External capabilities, integrations, sandbox/network boundaries.
 10. Persistence, Event Sourcing, recovery, projections, non-functional constraints.
 11. Review, contradiction resolution and finalization.
@@ -64,7 +68,7 @@ Each extracted artifact has:
 
 Supported kinds:
 
-`agent`, `entity`, `property`, `type`, `context`, `intent`, `atomic_behavior`, `domain_action`, `flow`, `event`, `policy`, `constraint`, `capability`, `infrastructure`, `architecture_decision`.
+`agent`, `entity`, `property`, `type`, `context`, `intent`, `atomic_behavior`, `domain_action`, `flow`, `event`, `policy`, `constraint`, `capability`, `infrastructure`, `relationship`, `identity_rule`, `proof_obligation`, `evidence`, `architecture_decision`.
 
 ## Artifact-specific requirements
 
@@ -74,11 +78,58 @@ Capture responsibility, owned Intents, observed contexts, allowed capabilities a
 
 ### Entity
 
-Capture semantic identity before storage schema. Prefer `canonical_label`, aliases/synonyms, identity characteristics and relationships that complete behavior. If one property of Entity A plus one canonical characteristic of Entity B creates a context-specific unique identity, state this relationship explicitly rather than flattening it into a foreign key.
+Capture semantic identity before storage schema. Prefer `canonical_label`, aliases/synonyms and explicit identity characteristics. An Entity may be semantically identifiable before its behavior is complete.
+
+If one property of Entity A plus one canonical characteristic of Entity B creates a context-specific unique identity, do not hide that relationship in `Entity.data` and do not flatten it into a foreign key. Materialize the property/canonical characteristic, a `relationship`, and an `identity_rule` when enough information exists.
 
 ### Property / Type
 
 Avoid primitive obsession. Preserve domain meaning, units, constraints and capabilities. A `Money`, `CPF`, `Phone`, `Timestamp`, `Percentage` or domain identifier is not merely its wire representation.
+
+When a property is explicitly the characteristic another Entity uses to link/absorb it, set:
+
+```json
+{
+  "entity": "Merchant",
+  "canonicalCharacteristic": true
+}
+```
+
+### Relationship
+
+Use `relationship` for a semantic edge between Entities. Prefer these fields when known:
+
+```json
+{
+  "fromEntity": "Customer",
+  "toEntity": "Merchant",
+  "relation": "absorbs-for-context",
+  "behaviorCompleting": true,
+  "canonicalCharacteristic": "Merchant.taxId",
+  "context": "merchant-customer"
+}
+```
+
+`behaviorCompleting=true` means the source Entity has a semantic identity on its own but needs the relation to possess complete behavior in that context. A behavior-completing relationship should identify the canonical characteristic used to establish the link.
+
+### Identity Rule
+
+Use `identity_rule` when identity is composite, contextual or crosses Entity boundaries. Required shape when applicable:
+
+```json
+{
+  "entity": "Customer",
+  "components": [
+    { "entity": "Customer", "characteristic": "Customer.phone" },
+    { "entity": "Merchant", "characteristic": "Merchant.taxId" }
+  ],
+  "context": "merchant-customer",
+  "uniqueness": "context-unique",
+  "behaviorCompleting": true
+}
+```
+
+Do not claim global uniqueness when only contextual uniqueness was stated.
 
 ### Intent
 
@@ -131,9 +182,26 @@ A Domain Action is the concrete actor/action used by one Intent or flow. It must
 
 Never ask the user to choose the names of Ok/Error events. They are not configuration.
 
-### Flow
+### Flow / 2flow
 
-Capture causal structure, not an imperative code listing. Record trigger/listened event, ordered actions, parallel groups, success/error branches, causation/correlation needs and the point at which Human-in-the-Healing-Loop is required. Preserve 2flow-compatible semantics when the user expresses `->`, `<-`, `->>`, `<<-`, parallel `[]`, `try/catch` or `error#last-error`.
+Capture causal structure, not an imperative code listing. Record trigger/listened event, ordered actions, parallel groups, success/error branches, causation/correlation needs and the point at which Human-in-the-Healing-Loop is required.
+
+When the user gives 2flow syntax, preserve it faithfully in `data.twoFlow`. The deterministic materializer, not the model, owns parsing and visualization.
+
+Supported structural operators are:
+
+```text
+->   input
+<-   output
+->>  call
+<<-  called
+[a, b] parallel
+try
+catch
+error#last-error
+```
+
+The materializer derives both `flows/<flow>.ast.json` and `flows/<flow>.mmd`. Do not invent steps merely to make a diagram look complete.
 
 ### Events
 
@@ -143,9 +211,74 @@ Events are facts. Distinguish input/listened events from standard Action consequ
 
 Express what must be true and where it is enforced. Separate business invariant, authorization rule, security policy, operational limit and implementation preference.
 
+An explicit invariant/algebraic law can become the `basisArtifact` for a proof obligation when it states a proposition that is meaningfully formalizable.
+
+### Proof Obligation
+
+Create `proof_obligation` only for an explicit proposition/obligation. Prefer:
+
+```json
+{
+  "proposition": "The same action id changes settlement state at most once.",
+  "basisArtifact": "Payment.NoDuplicateSettlement",
+  "proofKind": "idempotency",
+  "formalizable": true,
+  "status": "unproven"
+}
+```
+
+Supported Agda-stub proof kinds are:
+
+- `determinism`
+- `identity_preservation`
+- `idempotency`
+- `ordering`
+- `authorization_monotonicity`
+- `behavior_composition`
+- `exactly_once_semantics`
+
+A generated Agda file is an intentionally unproven stub with a hole. Never describe stub generation as proof completion.
+
+Never set `status=proven` unless a separate `evidence` artifact of class `formal_proof` explicitly points to the obligation and records its checker/proof assistant.
+
+### Evidence
+
+Evidence is separate from the proposition it supports. Use:
+
+```json
+{
+  "proves": ["Payment.IdempotencyProof"],
+  "evidenceClass": "formal_proof",
+  "checker": "Agda",
+  "artifactHash": "...",
+  "source": "..."
+}
+```
+
+Supported evidence classes are conceptually:
+
+- `formal_proof`
+- `model_check`
+- `test`
+- `runtime_observation`
+- `review`
+
+A test, event, log or runtime observation may support engineering confidence but cannot by itself satisfy a formal-proof claim. Do not use `event` or `runtime_event` as a shortcut for `formal_proof`.
+
 ### Capability / Infrastructure
 
 Model the semantic capability first (“durable event store”, “vector lookup”, “payment settlement”), and bind a concrete provider only if chosen by the user. Network access must not leak into Actions that are meant to have RAM+disk-only capability sets.
+
+## Pinned Blueprint source
+
+The Forger uses `blueprint.lock.json` to pin the structural upstream source by full commit SHA and individual Git blob SHAs. Generated projects receive:
+
+```text
+.allascode/blueprint.lock.json
+docs/BLUEPRINT_SOURCE.md
+```
+
+Do not reinterpret legacy prose from the pinned source as current runtime semantics. The compatibility profile is authoritative for current AllasCode decisions, including fixed Ok/Error consequences, mandatory self-healing and immutable Intent.
 
 ## Required AtomicAction package
 
@@ -178,7 +311,7 @@ Later stages may add scenarios, config schema, formalization (`.agda`, `.law`, `
 
 ### `forger_session_init`
 
-Call exactly once for a new interview. Supply an opaque session id, project name and user-provided summary. This creates root `manifest.yml`, `config.yml` and `README.md` with structural AllasCode defaults.
+Call exactly once for a new interview. Supply an opaque session id, project name and user-provided summary. This creates root structure, Blueprint provenance, the initial identity graph and the append-only session event log.
 
 ### `forger_artifact_upsert`
 
@@ -190,13 +323,44 @@ For Action artifacts, do **not** inject custom terminal events into `data`; the 
 
 Call only after every artifact extracted from that answer has been successfully upserted. Persist the user message, assistant reply, facts and whether the current phase completed. This ordering prevents the interview transcript from advancing when materialization failed.
 
+The server appends the turn to the session event log. The agent must not attempt to edit the event log directly.
+
 ### `forger_session_snapshot`
 
-Call before answering a new turn and after mutations when consistency matters. Use its `tree` and validation findings to avoid duplicating artifacts and to discover unresolved obligations.
+Call before answering a new turn and after mutations when consistency matters. Snapshot reconstructs semantic interview state from the event log when available and overlays non-interview delivery metadata such as repository review state. Use its `tree` and validation findings to avoid duplicating artifacts and to discover unresolved obligations.
 
 ### `forger_finalize`
 
-Call only after the review phase or an explicit user request to freeze the current state. It writes the semantic project summary, interview trace and forge-state snapshot. Warnings can remain visible; hard validation errors must block finalization.
+Call only after the review phase or an explicit user request to freeze the current state. It writes the semantic project summary, interview trace, forge-state snapshot and exported `.allascode/interview-events.ndjson`. Warnings can remain visible; hard validation errors must block finalization.
+
+### `forger_repository_target_set`
+
+Configure the GitHub destination only after the target is explicit. Preserve `owner/repo`, base branch, target/review branch and optional path prefix. Do not put repository credentials into state or generated files.
+
+### `forger_repository_review`
+
+Generate a non-mutating diff. The resulting review token binds the base SHA and exact generated file hashes. A review is not publication.
+
+### `forger_repository_publish`
+
+Call only after explicit approval of the current review token. Publication must fail when workspace content changed after review, when the branch moved, when the review token differs, or when the review was already published.
+
+## Event-sourced session rules
+
+Interview history is append-only:
+
+```text
+SessionInitialized
+ArtifactUpserted*
+TurnRecorded*
+SessionFinalized?
+```
+
+- Sequence numbers must be contiguous.
+- Replaying the same `(kind, canonicalLabel)` replaces the semantic artifact rather than duplicating identity.
+- A gap in sequence is corruption and must not be silently ignored.
+- The JSON snapshot is a cache/overlay for delivery metadata. Interview reconstruction must remain possible from the NDJSON history when the snapshot cache is missing.
+- Repository target/review state is delivery metadata and is not currently part of the semantic interview event stream.
 
 ## Mandatory agent loop
 
@@ -223,13 +387,17 @@ When a later answer contradicts an earlier artifact:
 4. If identity changed, create the new identity and add an architecture decision or fact explaining supersession; do not silently leave two active meanings.
 5. Re-run snapshot/validation.
 
+Because artifact updates are event-sourced, the prior meaning remains auditable in history while replay resolves the current active artifact deterministically.
+
 ## Questions: quality bar
 
 Questions should be domain-facing and understandable without AllasCode jargon. Internally translate answers into the architecture. Prefer:
 
 - “O que identifica um pagamento mesmo se o provedor mudar?”
+- “Existe alguma característica de outra entidade sem a qual esta entidade ainda existe, mas não consegue completar seu comportamento?”
 - “O que jamais pode acontecer depois que esse Intent começa?”
 - “Se essa Action cair depois de persistir metade do trabalho, de qual fato ela retoma?”
+- “Essa regra é apenas testável ou você quer afirmar uma propriedade que precisa ser provada formalmente?”
 
 Avoid asking users to design incidental framework choices:
 
@@ -241,7 +409,9 @@ Those are derived or implementation concerns.
 
 ## Formalization/evidence gate
 
-Only create proof obligations that correspond to an explicit invariant or algebraic claim. Examples include determinism, identity preservation, ordering, idempotency, authorization monotonicity, exactly-once semantic settlement or legal behavior composition. Mark obligations as unproven until evidence exists. Never label a test run, log line or emitted event as a formal proof by itself.
+Only create proof obligations that correspond to an explicit invariant or algebraic claim. Examples include determinism, identity preservation, ordering, idempotency, authorization monotonicity, exactly-once semantic settlement or legal behavior composition. Mark obligations as unproven until evidence exists.
+
+`status=proven` is a high-integrity claim. It requires explicit `formal_proof` evidence pointing back to the obligation, with the checker/proof assistant identified. A generated Agda stub, successful test, CI status, runtime log or emitted event is not sufficient.
 
 ## Final review checklist
 
@@ -250,6 +420,8 @@ Before finalization, verify as applicable:
 - system purpose and non-goals are explicit;
 - contexts and Agents are identified;
 - core Entities have semantic identities;
+- canonical characteristics and cross-Entity identity rules are explicit where needed;
+- behavior-completing relationships are not reduced to storage foreign keys;
 - relevant properties have semantic types/capabilities;
 - each major user/business outcome is an Intent;
 - Intents reference sufficient behaviors/actions;
@@ -259,8 +431,11 @@ Before finalization, verify as applicable:
 - Ok/Error are structural and not user-configured;
 - Error paths have self-healing obligations;
 - flows preserve causality and parallelism;
+- 2flow source and generated AST do not contain invented steps;
 - capabilities and sandbox boundaries are explicit;
 - state/recovery requirements are captured;
+- proof obligations remain unproven unless valid formal evidence exists;
+- session history can be replayed without a snapshot cache;
 - unresolved assumptions are visible;
 - validation findings are shown to the user rather than hidden.
 
