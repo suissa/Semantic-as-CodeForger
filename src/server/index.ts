@@ -35,7 +35,7 @@ app.use(express.json({ limit: jsonLimit }));
 function errorStatus(error: unknown): number {
   const message = error instanceof Error ? error.message : String(error);
   if (/Unknown Forger session/.test(message)) return 404;
-  if (/already finalized|Cannot finalize|changed after review|moved after|stale|already published/i.test(message)) return 409;
+  if (/already finalized|Cannot finalize|changed after review|moved after|stale|already published|lease busy|lease lost|fencing token is stale/i.test(message)) return 409;
   if (/required|invalid|must |too long|exceeded/i.test(message)) return 400;
   return 500;
 }
@@ -79,12 +79,13 @@ async function sessionSnapshot(sessionId: string, tenant: string): Promise<Sessi
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
   service: 'semantic-as-code-forger',
-  version: '0.7.0',
+  version: '0.8.0',
   topology: {
     instances: Number(process.env.FORGER_INSTANCE_COUNT ?? 1),
     workspace: runtimeWorkspace.kind,
     rateLimit: process.env.FORGER_RATE_LIMIT_BACKEND?.trim() || 'memory',
-    audit: process.env.FORGER_AUDIT_BACKEND?.trim() || 'file'
+    audit: process.env.FORGER_AUDIT_BACKEND?.trim() || 'file',
+    sessionLease: process.env.FORGER_SESSION_LEASE_BACKEND?.trim() || 'memory'
   }
 }));
 app.use('/api', (req, res, next) => void authenticationMiddleware(req, res, next));
