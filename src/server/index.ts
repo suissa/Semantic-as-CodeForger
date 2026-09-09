@@ -8,6 +8,7 @@ import { interviewPhases, nextQuestion, phaseFor } from './interview.js';
 import { analyzeTurn } from './model.js';
 import { ForgerMcpClient } from './mcp-client.js';
 import { getProjectDirectory } from '../mcp/project.js';
+import { authenticationMiddleware, principalFromResponse } from './auth.js';
 
 const app = express();
 const mcp = new ForgerMcpClient();
@@ -28,8 +29,16 @@ function routeParam(req: express.Request, name: string): string {
   return value;
 }
 
-async function sessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
-  const payload = await mcp.call<{ state: ForgeState; tree: string[]; validation: ValidationFinding[] }>('forger_session_snapshot', { sessionId });
+function tenantId(res: express.Response): string {
+  return principalFromResponse(res).tenantId;
+}
+
+function mcpCall<T>(tenant: string, name: string, args: Record<string, unknown>): Promise<T> {
+  return mcp.call<T>(name, { tenantId: tenant, ...args });
+}
+
+async function sessionSnapshot(sessionId: string, tenant: string): Promise<SessionSnapshot> {
+  const payload = await mcpCall<{ state: ForgeState; tree: string[]; validation: ValidationFinding[] }>(tenant, 'forger_session_snapshot', { sessionId });
   const phaseIndex = Math.min(payload.state.phaseIndex, interviewPhases.length - 1);
   return {
     ...payload.state,
@@ -41,40 +50,43 @@ async function sessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'semantic-as-code-forger' }));
+app.use('/api', (req, res, next) => void authenticationMiddleware(req, res, next));
 
 app.post('/api/sessions', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const projectName = String(req.body?.projectName ?? '').trim();
   const summary = String(req.body?.summary ?? '').trim();
   if (!projectName) { res.status(400).json({ error: 'projectName is required' }); return; }
   const sessionId = randomUUID();
-  await mcp.call('forger_session_init', { sessionId, projectName, summary });
+  await mcpCall(tenant, 'forger_session_init', { sessionId, projectName, summary });
   const assistantMessage = interviewPhases[0]!.question;
-  const state = await mcp.call<ForgeState>('forger_session_record_turn', {
+  const state = await mcpCall<ForgeState>(tenant, 'forger_session_record_turn', {
     sessionId,
     userMessage: `[project initialized: ${projectName}]`,
     assistantMessage,
     facts: summary ? [`project-summary: ${summary}`] : [],
     phaseComplete: false
   });
-  res.status(201).json({ ...await sessionSnapshot(state.sessionId), assistantMessage });
+  res.status(201).json({ ...await sessionSnapshot(state.sessionId, tenant), assistantMessage });
 }));
 
 app.get('/api/sessions/:sessionId', asyncRoute(async (req, res) => {
-  res.json(await sessionSnapshot(routeParam(req, 'sessionId')));
+  res.json(await sessionSnapshot(routeParam(req, 'sessionId'), tenantId(res)));
 }));
 
 app.post('/api/sessions/:sessionId/messages', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
   const message = String(req.body?.message ?? '').trim();
   if (!message) { res.status(400).json({ error: 'message is required' }); return; }
 
-  const before = await sessionSnapshot(sessionId);
+  const before = await sessionSnapshot(sessionId, tenant);
   if (before.finalizedAt) { res.status(409).json({ error: 'Session already finalized' }); return; }
   const phase = phaseFor(before);
   const result = await analyzeTurn(before, phase, message);
 
   for (const artifact of result.artifacts) {
-    await mcp.call<SemanticArtifact>('forger_artifact_upsert', { sessionId, artifact });
+    await mcpCall<SemanticArtifact>(tenant, 'forger_artifact_upsert', { sessionId, artifact });
   }
 
   const terminalPhase = before.phaseIndex >= interviewPhases.length - 1;
@@ -84,7 +96,7 @@ app.post('/api/sessions/:sessionId/messages', asyncRoute(async (req, res) => {
     : result.followUpQuestion ?? nextQuestion(before, advanced);
   const assistantMessage = `${result.acknowledgement}\n\n${question}`;
 
-  await mcp.call('forger_session_record_turn', {
+  await mcpCall(tenant, 'forger_session_record_turn', {
     sessionId,
     userMessage: message,
     assistantMessage,
@@ -92,20 +104,22 @@ app.post('/api/sessions/:sessionId/messages', asyncRoute(async (req, res) => {
     phaseComplete: advanced
   });
 
-  res.json({ ...await sessionSnapshot(sessionId), assistantMessage, extractedArtifacts: result.artifacts });
+  res.json({ ...await sessionSnapshot(sessionId, tenant), assistantMessage, extractedArtifacts: result.artifacts });
 }));
 
 app.post('/api/sessions/:sessionId/finalize', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
-  await mcp.call('forger_finalize', { sessionId });
-  res.json(await sessionSnapshot(sessionId));
+  await mcpCall(tenant, 'forger_finalize', { sessionId });
+  res.json(await sessionSnapshot(sessionId, tenant));
 }));
 
 app.post('/api/sessions/:sessionId/repository/target', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
   const repository = String(req.body?.repository ?? '').trim();
   if (!repository) { res.status(400).json({ error: 'repository is required as owner/name' }); return; }
-  await mcp.call('forger_repository_target_set', {
+  await mcpCall(tenant, 'forger_repository_target_set', {
     sessionId,
     repository,
     baseBranch: typeof req.body?.baseBranch === 'string' ? req.body.baseBranch : undefined,
@@ -114,38 +128,42 @@ app.post('/api/sessions/:sessionId/repository/target', asyncRoute(async (req, re
     pullRequestPolicy: typeof req.body?.pullRequestPolicy === 'string' ? req.body.pullRequestPolicy : undefined,
     pullRequestDraft: req.body?.pullRequestDraft === true
   });
-  res.json(await sessionSnapshot(sessionId));
+  res.json(await sessionSnapshot(sessionId, tenant));
 }));
 
 app.post('/api/sessions/:sessionId/repository/review', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
-  await mcp.call('forger_repository_review', { sessionId });
-  res.json(await sessionSnapshot(sessionId));
+  await mcpCall(tenant, 'forger_repository_review', { sessionId });
+  res.json(await sessionSnapshot(sessionId, tenant));
 }));
 
 app.post('/api/sessions/:sessionId/repository/publish', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
   const reviewToken = String(req.body?.reviewToken ?? '').trim();
   if (!reviewToken) { res.status(400).json({ error: 'reviewToken is required' }); return; }
-  await mcp.call('forger_repository_publish', { sessionId, reviewToken });
-  res.json(await sessionSnapshot(sessionId));
+  await mcpCall(tenant, 'forger_repository_publish', { sessionId, reviewToken });
+  res.json(await sessionSnapshot(sessionId, tenant));
 }));
 
 app.post('/api/sessions/:sessionId/repository/pull-request', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
-  await mcp.call('forger_repository_pull_request_create', {
+  await mcpCall(tenant, 'forger_repository_pull_request_create', {
     sessionId,
     title: typeof req.body?.title === 'string' ? req.body.title : undefined,
     body: typeof req.body?.body === 'string' ? req.body.body : undefined,
     draft: typeof req.body?.draft === 'boolean' ? req.body.draft : undefined
   });
-  res.json(await sessionSnapshot(sessionId));
+  res.json(await sessionSnapshot(sessionId, tenant));
 }));
 
 app.get('/api/sessions/:sessionId/export', asyncRoute(async (req, res) => {
+  const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
-  await sessionSnapshot(sessionId);
-  const directory = getProjectDirectory(sessionId);
+  await sessionSnapshot(sessionId, tenant);
+  const directory = getProjectDirectory(sessionId, tenant);
   res.attachment(`allascode-${sessionId}.zip`);
   const archive = archiver('zip', { zlib: { level: 9 } });
   archive.on('error', (error) => res.destroy(error));
