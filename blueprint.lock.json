@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "repository": "suissa/AllasCode-Blueprint",
+  "commit": "838f8488adcf5bc7e109efe8ebcf8a5380af1872",
+  "root": "Blueprint",
+  "sources": [
+    {
+      "path": "Blueprint/folder-structure.md",
+      "blobSha": "c8dd9344836005d942309978475e9ea0e3e6583b",
+      "role": "structure"
+    },
+    {
+      "path": "Blueprint/config/required.yml",
+      "blobSha": "10d93d55e07c49ca4b545f2ebdb1074465b40942",
+      "role": "required-config"
+    },
+    {
+      "path": "Blueprint/schemas/README.md",
+      "blobSha": "17e2a4e9e50c8027d8467cf88885b7260fd901a4",
+      "role": "schema-index"
+    },
+    {
+      "path": "Blueprint/schemas/atomicbehavior/README.md",
+      "blobSha": "2e395e7d7bd81ea1a8681543b8645db65ec315be",
+      "role": "atomicbehavior-schema"
+    },
+    {
+      "path": "Blueprint/atomicbehavior/actions/README.md",
+      "blobSha": "ef388f084f8513ed7b9f91ad91ea13ff548fc43d",
+      "role": "atomicaction-template"
+    }
+  ],
+  "compatibility": {
+    "profile": "allascode-current",
+    "terminalEvents": ["Ok", "Error"],
+    "terminalEventsConfigurable": false,
+    "legacyTerminalAliasesAllowed": false,
+    "selfHealingRequired": true,
+    "intentImmutable": true,
+    "preserveUnknowns": true,
+    "fabricateDomainRules": false,
+    "note": "Pinned upstream structure is authoritative for layout/provenance. Current AllasCode semantics override legacy success/failure examples in older Blueprint prose."
+  }
+}
