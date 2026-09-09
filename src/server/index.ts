@@ -101,6 +101,34 @@ app.post('/api/sessions/:sessionId/finalize', asyncRoute(async (req, res) => {
   res.json(await sessionSnapshot(sessionId));
 }));
 
+app.post('/api/sessions/:sessionId/repository/target', asyncRoute(async (req, res) => {
+  const sessionId = routeParam(req, 'sessionId');
+  const repository = String(req.body?.repository ?? '').trim();
+  if (!repository) { res.status(400).json({ error: 'repository is required as owner/name' }); return; }
+  await mcp.call('forger_repository_target_set', {
+    sessionId,
+    repository,
+    baseBranch: typeof req.body?.baseBranch === 'string' ? req.body.baseBranch : undefined,
+    targetBranch: typeof req.body?.targetBranch === 'string' ? req.body.targetBranch : undefined,
+    pathPrefix: typeof req.body?.pathPrefix === 'string' ? req.body.pathPrefix : undefined
+  });
+  res.json(await sessionSnapshot(sessionId));
+}));
+
+app.post('/api/sessions/:sessionId/repository/review', asyncRoute(async (req, res) => {
+  const sessionId = routeParam(req, 'sessionId');
+  await mcp.call('forger_repository_review', { sessionId });
+  res.json(await sessionSnapshot(sessionId));
+}));
+
+app.post('/api/sessions/:sessionId/repository/publish', asyncRoute(async (req, res) => {
+  const sessionId = routeParam(req, 'sessionId');
+  const reviewToken = String(req.body?.reviewToken ?? '').trim();
+  if (!reviewToken) { res.status(400).json({ error: 'reviewToken is required' }); return; }
+  await mcp.call('forger_repository_publish', { sessionId, reviewToken });
+  res.json(await sessionSnapshot(sessionId));
+}));
+
 app.get('/api/sessions/:sessionId/export', asyncRoute(async (req, res) => {
   const sessionId = routeParam(req, 'sessionId');
   await sessionSnapshot(sessionId);
