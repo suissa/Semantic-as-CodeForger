@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "repository": "suissa/AllasCode",
+  "commit": "70d898e740031daf0382cb8f35d568774fb12d6a",
+  "schemaVersion": "1.0",
+  "sources": [
+    {
+      "upstreamPath": "schemas/allascode.model.schema.json",
+      "localPath": "runtime/allascode.model.schema.json",
+      "blobSha": "4daaf5e1d660197a0ba1ac2964d014ef6273f1d6",
+      "role": "model-schema"
+    },
+    {
+      "upstreamPath": "schemas/test-vectors/allascode.model.valid.json",
+      "localPath": "runtime/test-vectors/allascode.model.valid.json",
+      "blobSha": "cf263953d0145ba50002de31d1014147581cfdb2",
+      "role": "valid-vector"
+    },
+    {
+      "upstreamPath": "schemas/test-vectors/allascode.model.invalid-embedded.json",
+      "localPath": "runtime/test-vectors/allascode.model.invalid-embedded.json",
+      "blobSha": "daabf7351aae6493eb310fda4e48990d3aad7236",
+      "role": "invalid-vector"
+    }
+  ]
+}
