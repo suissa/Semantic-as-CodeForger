@@ -11,10 +11,12 @@ User conversation
       ↓
 Semantic interviewer / extractor
       ↓ semantic artifacts
+Authenticated tenant context
+      ↓
 Backend MCP client
-      ↓ tool calls
-Governed Blueprint materializer
-      ↓ pinned Blueprint renderer
+      ↓ governed tool calls
+Blueprint/runtime materializer
+      ↓ pinned contracts
 AllasCode project tree
       ↓ finalize
 Fresh repository review token
@@ -24,7 +26,7 @@ GitHub review branch
 Pull Request
 ```
 
-This keeps LLM reasoning probabilistic while project mutation is deterministic. The model cannot choose arbitrary paths, rename structural result events, bypass repository review, or claim a formal proof without explicit formal evidence.
+This keeps LLM reasoning probabilistic while mutation, tenancy, source pinning, repository review and formal-proof claims remain deterministic and governed.
 
 ## AllasCode rules encoded
 
@@ -43,25 +45,46 @@ This keeps LLM reasoning probabilistic while project mutation is deterministic. 
 
 ## Pinned AllasCode-Blueprint source
 
-Generation is reproducible against `blueprint.lock.json`. The lock currently pins:
-
-```text
-suissa/AllasCode-Blueprint
-838f8488adcf5bc7e109efe8ebcf8a5380af1872
-```
-
-The lock records Git blob SHAs for the upstream structural/schema sources used by the renderer. CI downloads those exact files from the pinned commit and recalculates the Git blob hashes before tests/build are allowed to pass.
+Generation is reproducible against `blueprint.lock.json`. The lock pins `suissa/AllasCode-Blueprint` by full commit and Git blob SHA for every structural source used by the renderer.
 
 ```bash
 npm run blueprint:verify
 npm run blueprint:sync
 ```
 
-`blueprint:verify` checks integrity without writing a cache. `blueprint:sync` performs the same verification and stores the exact pinned sources under `.forger-cache/blueprint/<commit>/`.
-
 Every generated project receives `.allascode/blueprint.lock.json` and `docs/BLUEPRINT_SOURCE.md`. Older upstream prose that uses `success/failure` is treated as legacy documentation; the compatibility overlay keeps current structural `Ok/Error`, mandatory self-healing and immutable Intent semantics authoritative.
 
-## Run
+## Canonical AllasCode runtime boundary
+
+`runtime.lock.json` pins the canonical independent-model contract from `suissa/AllasCode`, including:
+
+- `schemas/allascode.model.schema.json`;
+- the official valid model vector;
+- the official invalid `embedded=true` vector.
+
+Every vendored file is bound to its canonical Git blob SHA. CI always recomputes those local hashes:
+
+```bash
+npm run runtime:verify
+```
+
+If an environment has explicit permission to read the pinned upstream repository, remote byte-for-byte comparison can additionally be enabled:
+
+```bash
+FORGER_RUNTIME_VERIFY_REMOTE=true npm run runtime:verify
+```
+
+Every forged project receives:
+
+```text
+allascode.model.json
+.allascode/runtime.lock.json
+docs/RUNTIME_CONFORMANCE.md
+```
+
+The descriptor is validated against the pinned JSON Schema during initialization and again before finalization.
+
+## Run locally
 
 ```bash
 npm install
@@ -73,6 +96,8 @@ npm run dev
 - API: `http://localhost:8787`
 - MCP: `npm run mcp`
 
+`FORGER_AUTH_MODE=disabled` is the backward-compatible local mode.
+
 For structured extraction, configure any OpenAI-compatible chat-completions provider:
 
 ```bash
@@ -83,6 +108,55 @@ LLM_MODEL=gpt-5
 
 Without an API key the interview still runs deterministically and preserves answers/facts, but it does not attempt rich artifact extraction from free-form language.
 
+## Hosted authentication and tenant isolation
+
+Set:
+
+```bash
+FORGER_AUTH_MODE=oidc
+FORGER_OIDC_ISSUER=https://issuer.example
+FORGER_OIDC_AUDIENCE=semantic-as-code-forger
+FORGER_OIDC_TENANT_CLAIM=sub
+```
+
+OIDC mode validates JWT signature, issuer, audience and allowed algorithms before reading the tenant claim. The default `sub` gives one isolated workspace namespace per authenticated subject; an organization product may use a verified claim such as `org_id`.
+
+Raw tenant identifiers never become filesystem paths. Hosted storage uses opaque SHA-256-derived namespaces:
+
+```text
+.forger-workspaces/tenants/tenant-<opaque-hash>/<session>/...
+```
+
+Every MCP tool requires `tenantId`; HTTP derives it from the verified principal and injects it rather than trusting request JSON. Local mode retains the legacy `.forger-workspaces/<session>` layout.
+
+The current hosted topology is intentionally **single-node**. Before horizontal replicas, replace local workspace storage and process-local rate limiting with shared durable equivalents.
+
+See [`docs/HOSTED_SECURITY.md`](docs/HOSTED_SECURITY.md) for the complete isolation, audit, quota and deployment model.
+
+## Hosted hardening
+
+v0.6 includes:
+
+- per-tenant HTTP rate limiting;
+- MCP-level artifact/turn/message/fact/byte quotas;
+- bounded JSON input and interview message sizes;
+- request IDs;
+- CSP and restrictive browser security headers;
+- configurable Node HTTP timeouts;
+- append-only operational audit records containing hashed tenant/subject identities only;
+- no authentication token/request body logging;
+- configurable session retention;
+- dry-run workspace GC by default.
+
+```bash
+npm run workspace:gc
+npm run workspace:gc:apply
+```
+
+The second command is the only one that deletes expired session directories.
+
+## GitHub delivery
+
 To review/publish against GitHub, configure a narrowly scoped token:
 
 ```bash
@@ -91,19 +165,7 @@ FORGER_GITHUB_TOKEN=...
 
 Read access is enough for review. Branch publication requires Contents write permission. Pull Request creation additionally requires permission to create pull requests. The token stays server-side and is never written into Forge state or generated project files.
 
-## API
-
-- `POST /api/sessions` — start a project interview.
-- `GET /api/sessions/:id` — replay/read current state, tree and validation.
-- `POST /api/sessions/:id/messages` — answer the next interview question.
-- `POST /api/sessions/:id/finalize` — freeze summary, trace and exported event stream.
-- `GET /api/sessions/:id/export` — download the generated Blueprint as ZIP.
-- `POST /api/sessions/:id/repository/target` — configure repository/base/review branch/path and PR policy.
-- `POST /api/sessions/:id/repository/review` — compute a non-mutating diff and mint its review token.
-- `POST /api/sessions/:id/repository/publish` — publish only the exact reviewed diff.
-- `POST /api/sessions/:id/repository/pull-request` — open or reuse a PR for the already-published reviewed branch.
-
-Repository target policy fields:
+Repository target policy example:
 
 ```json
 {
@@ -118,6 +180,21 @@ Repository target policy fields:
 
 `pullRequestPolicy` accepts `manual` or `after_publish`.
 
+## API
+
+- `GET /api/health` — unauthenticated process health.
+- `POST /api/sessions` — start a project interview.
+- `GET /api/sessions/:id` — replay/read current state, tree and validation.
+- `POST /api/sessions/:id/messages` — answer the next interview question.
+- `POST /api/sessions/:id/finalize` — freeze summary, trace and exported event stream.
+- `GET /api/sessions/:id/export` — download the generated Blueprint as ZIP.
+- `POST /api/sessions/:id/repository/target` — configure repository/base/review branch/path and PR policy.
+- `POST /api/sessions/:id/repository/review` — compute a non-mutating diff and mint its review token.
+- `POST /api/sessions/:id/repository/publish` — publish only the exact reviewed diff.
+- `POST /api/sessions/:id/repository/pull-request` — open or reuse a PR for the already-published reviewed branch.
+
+All API routes except health pass through authentication in hosted mode and tenant rate limiting.
+
 ## MCP tools
 
 - `forger_session_init`
@@ -130,43 +207,34 @@ Repository target policy fields:
 - `forger_repository_publish`
 - `forger_repository_pull_request_create`
 
-The backend spawns the MCP server over stdio and uses it for persisted mutations. The server writes project content only inside `.forger-workspaces/<session>/project` and sanitizes path segments.
+Every MCP tool requires the opaque authenticated `tenantId`. The MCP server scopes the whole call using `AsyncLocalStorage`, and project/state paths derive from that tenant context.
 
 ## Repository review and staleness gate
 
 Publication is intentionally separate from review:
 
-1. Configure a GitHub target. If no target branch is supplied, the Forger derives `forger/<project>-<session>`.
+1. Configure a GitHub target.
 2. Build a non-mutating review from the remote Git tree and local Git blob hashes.
 3. Mint a review token bound to repository, target branch/path, parent SHA and every generated file hash.
 4. Publish only when the current workspace and remote parent still match that review.
 
-Publication is rejected when:
-
-- workspace content changed after review;
-- the base branch moved after a base-based review;
-- the target branch moved after a target-based review;
-- a target branch appeared after the review was created from the base branch;
-- the supplied token is not the latest review token;
-- the review was already published.
-
-Remote files that are not owned by the generated workspace are preserved rather than implicitly deleted.
+Publication is rejected when workspace content or the relevant remote branch changed after review, a target appeared after a base review, a stale token is supplied, or the review was already published. Remote files not owned by the generated workspace are preserved rather than implicitly deleted.
 
 ## Pull Request delivery
 
-Branch materialization is the authoritative write operation. Pull Requests are an optional delivery layer.
+Branch materialization is the authoritative write operation. Pull Requests are optional:
 
 - `manual`: publish the reviewed branch first, then explicitly create a PR.
-- `after_publish`: after a successful non-empty branch publication, attempt to create the PR automatically.
+- `after_publish`: after a successful non-empty branch publication, attempt PR creation automatically.
 - `pullRequestDraft: true`: create the PR as draft.
 
-Before PR creation, the Forger verifies that the target branch still points to the exact published reviewed commit. If a matching open PR for the same head/base already exists, it is reused instead of duplicated. If automatic PR creation fails after the branch was successfully published, branch publication remains successful and the PR failure is surfaced separately in state/UI.
+Before PR creation the Forger verifies that the target branch still points to the exact published reviewed commit. A matching open head/base PR is reused instead of duplicated. If automatic PR creation fails after successful branch publication, the branch stays published and the PR error is surfaced separately.
 
 ## Event-sourced interview state
 
-The authoritative interview history is append-only NDJSON. Snapshot state is a cache. A session can be resumed by durable `sessionId`, and replay rejects event sequence gaps rather than silently reconstructing a partial state.
+The authoritative interview history is append-only NDJSON. Snapshot state is a cache. A session can be resumed by durable `sessionId`, and replay rejects event sequence gaps instead of silently reconstructing partial state.
 
-Finalization exports the event stream to `.allascode/interview-events.ndjson` together with the generated Blueprint.
+Finalization exports `.allascode/interview-events.ndjson` with the generated Blueprint.
 
 ## Tests and conformance
 
@@ -175,20 +243,14 @@ CI runs:
 ```text
 blueprint:verify
       ↓
+runtime:verify
+      ↓
 npm test
       ↓
 npm run build
 ```
 
-Coverage includes:
-
-- semantic identity/canonical-characteristic rules;
-- deterministic 2flow parsing;
-- proof/evidence gates and Agda eligibility;
-- interview Event Sourcing/replay and sequence gaps;
-- repository review token stability and staleness cases;
-- a golden Blueprint fixture spanning Domain Action, fixed Ok/Error, self-healing, identity graph, 2flow and Agda output;
-- real MCP stdio conformance: list tools → initialize session → upsert Domain Action → inspect governed materialized tree.
+Coverage includes semantic identity, deterministic 2flow, proof/evidence gates, Event Sourcing replay, tenant isolation, mandatory MCP tenant context, canonical runtime-model vectors, repository staleness, golden Blueprint materialization, quotas, workspace retention and real MCP stdio conformance.
 
 ## Interview phases
 
@@ -208,4 +270,4 @@ Coverage includes:
 
 When the conversation yields an Action, the MCP materializer creates a package with docs, manifest/config/interface, schemas, fixed Ok/Error events, invariant/forbidden/self-healing specifications, micro `SKILL.md` and an implementation placeholder. Its provenance records the exact pinned Blueprint commit. Later turns refine the same canonical artifact instead of duplicating semantic identities.
 
-See [`skills/allascode-project-forger/SKILL.md`](skills/allascode-project-forger/SKILL.md) for the backend agent protocol and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the roadmap.
+See [`skills/allascode-project-forger/SKILL.md`](skills/allascode-project-forger/SKILL.md), [`docs/HOSTED_SECURITY.md`](docs/HOSTED_SECURITY.md), and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
