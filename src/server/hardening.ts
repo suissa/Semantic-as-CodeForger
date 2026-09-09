@@ -44,7 +44,7 @@ export function tenantRateLimitMiddleware(_req: express.Request, res: express.Re
 
   const identity = principal(res);
   if (!identity) { next(); return; }
-  const scope = `tenant:${identity.tenantId}`;
+  const scope = `tenant:${opaqueHash(identity.tenantId)}`;
   const backend = rateLimitBackend();
 
   void backend.consume(scope, limit, 60_000).then((decision) => {
