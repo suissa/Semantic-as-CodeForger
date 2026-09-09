@@ -12,6 +12,7 @@ export function App() {
   const [session, setSession] = useState<SessionSnapshot>();
   const [projectName, setProjectName] = useState('');
   const [summary, setSummary] = useState('');
+  const [resumeId, setResumeId] = useState('');
   const [message, setMessage] = useState('');
   const [repository, setRepository] = useState('');
   const [baseBranch, setBaseBranch] = useState('');
@@ -22,12 +23,32 @@ export function App() {
 
   const progress = useMemo(() => session ? Math.min(100, Math.round(((session.phaseIndex + 1) / session.phaseCount) * 100)) : 0, [session]);
 
+  function hydrateSession(data: SessionSnapshot) {
+    setSession(data);
+    const target = data.repository?.target;
+    if (target) {
+      setRepository(target.repository);
+      setBaseBranch(target.baseBranch);
+      setTargetBranch(target.targetBranch);
+      setPathPrefix(target.pathPrefix);
+    }
+  }
+
   async function start(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
-      const data = await api<SessionSnapshot>('/api/sessions', { method: 'POST', body: JSON.stringify({ projectName, summary }) });
-      setSession(data);
+      hydrateSession(await api<SessionSnapshot>('/api/sessions', { method: 'POST', body: JSON.stringify({ projectName, summary }) }));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+
+  async function resume(event: FormEvent) {
+    event.preventDefault();
+    const id = resumeId.trim();
+    if (!id) return;
+    setBusy(true); setError('');
+    try { hydrateSession(await api<SessionSnapshot>(`/api/sessions/${encodeURIComponent(id)}`)); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
 
@@ -36,15 +57,14 @@ export function App() {
     if (!session || !message.trim()) return;
     const current = message; setMessage(''); setBusy(true); setError('');
     try {
-      const data = await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/messages`, { method: 'POST', body: JSON.stringify({ message: current }) });
-      setSession(data);
+      hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/messages`, { method: 'POST', body: JSON.stringify({ message: current }) }));
     } catch (e) { setMessage(current); setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
 
   async function finalize() {
     if (!session) return; setBusy(true); setError('');
-    try { setSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/finalize`, { method: 'POST', body: '{}' })); }
+    try { hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/finalize`, { method: 'POST', body: '{}' })); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
@@ -54,18 +74,10 @@ export function App() {
     if (!session || !repository.trim()) return;
     setBusy(true); setError('');
     try {
-      const data = await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/target`, {
+      hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/target`, {
         method: 'POST',
         body: JSON.stringify({ repository, baseBranch, targetBranch, pathPrefix })
-      });
-      setSession(data);
-      const target = data.repository?.target;
-      if (target) {
-        setRepository(target.repository);
-        setBaseBranch(target.baseBranch);
-        setTargetBranch(target.targetBranch);
-        setPathPrefix(target.pathPrefix);
-      }
+      }));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
@@ -73,7 +85,7 @@ export function App() {
   async function reviewRepository() {
     if (!session) return;
     setBusy(true); setError('');
-    try { setSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/review`, { method: 'POST', body: '{}' })); }
+    try { hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/review`, { method: 'POST', body: '{}' })); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
@@ -83,7 +95,7 @@ export function App() {
     if (!session || !reviewToken) return;
     setBusy(true); setError('');
     try {
-      setSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/publish`, {
+      hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/publish`, {
         method: 'POST', body: JSON.stringify({ reviewToken })
       }));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -95,13 +107,21 @@ export function App() {
       <section className="hero">
         <div className="eyebrow">ALLASCODE · SEMANTIC AS CODE</div>
         <h1>Forge the system before writing it.</h1>
-        <p>Descreva o sistema em uma entrevista. O agente extrai Intents, Entities, AtomicAction Behaviors, invariantes, fluxos e políticas e materializa o Blueprint via MCP.</p>
-        <form onSubmit={start} className="start-card">
-          <label>Nome do projeto<input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="MyCommerce" autoFocus /></label>
-          <label>Resumo inicial<textarea value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="Um sistema que..." rows={4} /></label>
-          <button disabled={busy || !projectName.trim()}>{busy ? 'Criando…' : 'Iniciar entrevista'}</button>
-          {error && <div className="error">{error}</div>}
-        </form>
+        <p>Descreva o sistema em uma entrevista. O agente extrai identidade semântica, Intents, AtomicAction Behaviors, 2flow, invariantes e proof obligations e materializa o Blueprint via MCP.</p>
+        <div className="landing-actions">
+          <form onSubmit={start} className="start-card">
+            <div className="card-title"><b>Novo Blueprint</b><span>Comece uma entrevista semântica.</span></div>
+            <label>Nome do projeto<input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="MyCommerce" autoFocus /></label>
+            <label>Resumo inicial<textarea value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="Um sistema que..." rows={4} /></label>
+            <button disabled={busy || !projectName.trim()}>{busy ? 'Criando…' : 'Iniciar entrevista'}</button>
+          </form>
+          <form onSubmit={resume} className="resume-card">
+            <div className="card-title"><b>Retomar entrevista</b><span>O estado é reconstruído pelo log append-only da sessão.</span></div>
+            <label>Session ID<input value={resumeId} onChange={(e) => setResumeId(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /></label>
+            <button className="secondary" disabled={busy || !resumeId.trim()}>{busy ? 'Carregando…' : 'Retomar sessão'}</button>
+          </form>
+        </div>
+        {error && <div className="error landing-error">{error}</div>}
       </section>
     </main>;
   }
@@ -112,9 +132,9 @@ export function App() {
 
   return <main className="shell">
     <aside className="sidebar">
-      <div><div className="eyebrow">SEMANTIC AS CODE FORGER</div><h2>{session.projectName}</h2><p>{session.summary}</p></div>
+      <div><div className="eyebrow">SEMANTIC AS CODE FORGER</div><h2>{session.projectName}</h2><p>{session.summary}</p><code className="session-id" title={session.sessionId}>{session.sessionId}</code></div>
       <div className="phase"><span>Fase atual</span><strong>{session.phaseName}</strong><div className="bar"><i style={{ width: `${progress}%` }} /></div><small>{progress}% da entrevista</small></div>
-      <div className="artifacts"><span>Blueprint vivo</span><strong>{session.artifacts.length} artefatos</strong><strong>{session.tree.length} arquivos</strong></div>
+      <div className="artifacts"><span>Blueprint vivo</span><strong>{session.artifacts.length} artefatos</strong><strong>{session.tree.length} arquivos</strong><small>Replay por Event Sourcing habilitado</small></div>
       <div className="side-actions">
         <button className="secondary" onClick={finalize} disabled={busy || Boolean(session.finalizedAt)}>Finalizar Blueprint</button>
         <a className="secondary link" href={`/api/sessions/${session.sessionId}/export`}>Baixar .zip</a>
@@ -122,7 +142,7 @@ export function App() {
     </aside>
 
     <section className="chat-panel">
-      <header><div><b>Entrevistador semântico</b><span>{session.finalizedAt ? 'Blueprint finalizado · pronto para review Git' : 'MCP materializer conectado'}</span></div></header>
+      <header><div><b>Entrevistador semântico</b><span>{session.finalizedAt ? 'Blueprint finalizado · pronto para review Git' : 'MCP materializer · event-sourced session'}</span></div></header>
       <div className="messages">
         {session.turns.filter((turn) => !turn.content.startsWith('[project initialized:')).map((turn, index) =>
           <article key={`${turn.at}-${index}`} className={`message ${turn.role}`}><div className="role">{turn.role === 'assistant' ? 'FORGER' : 'VOCÊ'}</div><p>{turn.content}</p></article>
