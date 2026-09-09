@@ -103,10 +103,26 @@ Build a TypeScript fullstack Semantic-as-Code Forger that interviews a user abou
 - [x] Configurable workspace retention for both legacy local sessions and hosted tenant namespaces.
 - [x] Workspace GC is dry-run by default and requires explicit `--apply` to delete expired sessions.
 
+## v0.7 — horizontal runtime topology implemented
+
+- [x] Provider-neutral runtime-service contracts for workspace topology, rate limiting and audit delivery.
+- [x] `local-fs|shared-posix` workspace topology with explicit multi-instance capability declaration.
+- [x] `memory|http` rate-limit backend selection.
+- [x] `file|http` audit backend selection.
+- [x] Fail-fast startup policy: `FORGER_INSTANCE_COUNT>1` refuses node-local workspace/rate-limit/audit combinations.
+- [x] Central HTTP control-plane client with bounded request timeout and optional bearer authentication.
+- [x] Reference `npm run control-plane` service implementing shared fixed-window rate limiting and append-only audit ingestion.
+- [x] Raw tenant identifiers never leave the application instance for rate limiting; only opaque SHA-256 scopes are sent to the control plane.
+- [x] Horizontal topology exposed in `/api/health` without exposing credentials or tenant identifiers.
+- [x] Runtime-service conformance tests for fixed-window semantics and valid/invalid multi-instance configurations.
+- [x] HTTP adapter conformance proving shared rate decisions and audit forwarding.
+- [x] Reference control-plane end-to-end test proving bearer auth, shared policy state and audit persistence.
+- [x] No Redis/S3/Postgres dependency is required by the Forger; distributed infrastructure can replace the reference control plane behind the same contract.
+
 ## Next slices
 
-1. Replace the process-local rate limiter with a shared/distributed limiter when horizontal multi-instance hosting is introduced.
-2. Add durable shared workspace/object storage before deploying more than one application instance; the current filesystem isolation is intentionally single-node.
+1. Add a production-grade distributed control-plane adapter (for example Redis/NATS/Postgres) only when deployment chooses one; the Forger-side HTTP contract remains stable.
+2. Add fencing/leases around mutable session operations if the same session may be processed concurrently by multiple app instances; shared storage alone does not serialize writers.
 3. Add audit-log rotation/export/signing policy if compliance-grade operational evidence is required.
 4. Expand repository conformance with a disposable GitHub test repository in CI when a safe scoped cross-repository test credential is available.
 5. Add a first-party browser OIDC login/session flow only if the hosted product should not rely on a trusted same-origin identity proxy.
