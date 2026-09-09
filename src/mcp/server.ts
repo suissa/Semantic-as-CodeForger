@@ -1,12 +1,16 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { assertRuntimeTopology } from '../infra/runtime-services.js';
 import { artifactKinds, type SemanticArtifact } from '../shared/types.js';
 import { finalize, initializeSession, recordTurn, snapshot, upsertArtifact } from './project.js';
 import { createRepositoryPullRequest, publishRepository, reviewRepository, setRepositoryTarget } from './github.js';
+import { withSessionMutationLease } from './session-mutation.js';
 import { normalizeTenantId, runWithTenant } from './tenant-context.js';
 
-const server = new Server({ name: 'semantic-as-code-forger-mcp', version: '0.6.0' }, { capabilities: { tools: {} } });
+assertRuntimeTopology();
+
+const server = new Server({ name: 'semantic-as-code-forger-mcp', version: '0.8.0' }, { capabilities: { tools: {} } });
 
 const tools = [
   {
@@ -103,6 +107,46 @@ for (const tool of tools) {
   };
 }
 
+function isMutatingTool(name: string): boolean {
+  return name !== 'forger_session_snapshot';
+}
+
+async function dispatch(name: string, args: Record<string, unknown>) {
+  switch (name) {
+    case 'forger_session_init':
+      return initializeSession(args as { sessionId: string; projectName: string; summary: string });
+    case 'forger_artifact_upsert':
+      return upsertArtifact(String(args.sessionId), args.artifact as SemanticArtifact);
+    case 'forger_session_record_turn':
+      return recordTurn(args as { sessionId: string; userMessage: string; assistantMessage: string; facts: string[]; phaseComplete: boolean });
+    case 'forger_session_snapshot':
+      return snapshot(String(args.sessionId));
+    case 'forger_finalize':
+      return finalize(String(args.sessionId));
+    case 'forger_repository_target_set':
+      return setRepositoryTarget(String(args.sessionId), {
+        repository: String(args.repository ?? ''),
+        baseBranch: typeof args.baseBranch === 'string' ? args.baseBranch : undefined,
+        targetBranch: typeof args.targetBranch === 'string' ? args.targetBranch : undefined,
+        pathPrefix: typeof args.pathPrefix === 'string' ? args.pathPrefix : undefined,
+        pullRequestPolicy: typeof args.pullRequestPolicy === 'string' ? args.pullRequestPolicy : undefined,
+        pullRequestDraft: args.pullRequestDraft === true
+      });
+    case 'forger_repository_review':
+      return reviewRepository(String(args.sessionId));
+    case 'forger_repository_publish':
+      return publishRepository(String(args.sessionId), String(args.reviewToken ?? ''));
+    case 'forger_repository_pull_request_create':
+      return createRepositoryPullRequest(String(args.sessionId), {
+        title: typeof args.title === 'string' ? args.title : undefined,
+        body: typeof args.body === 'string' ? args.body : undefined,
+        draft: typeof args.draft === 'boolean' ? args.draft : undefined
+      });
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
+}
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools as any }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const name = request.params.name;
@@ -110,39 +154,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const tenantId = normalizeTenantId(args.tenantId);
 
   const value = await runWithTenant(tenantId, async () => {
-    switch (name) {
-      case 'forger_session_init':
-        return initializeSession(args as { sessionId: string; projectName: string; summary: string });
-      case 'forger_artifact_upsert':
-        return upsertArtifact(String(args.sessionId), args.artifact as SemanticArtifact);
-      case 'forger_session_record_turn':
-        return recordTurn(args as { sessionId: string; userMessage: string; assistantMessage: string; facts: string[]; phaseComplete: boolean });
-      case 'forger_session_snapshot':
-        return snapshot(String(args.sessionId));
-      case 'forger_finalize':
-        return finalize(String(args.sessionId));
-      case 'forger_repository_target_set':
-        return setRepositoryTarget(String(args.sessionId), {
-          repository: String(args.repository ?? ''),
-          baseBranch: typeof args.baseBranch === 'string' ? args.baseBranch : undefined,
-          targetBranch: typeof args.targetBranch === 'string' ? args.targetBranch : undefined,
-          pathPrefix: typeof args.pathPrefix === 'string' ? args.pathPrefix : undefined,
-          pullRequestPolicy: typeof args.pullRequestPolicy === 'string' ? args.pullRequestPolicy : undefined,
-          pullRequestDraft: args.pullRequestDraft === true
-        });
-      case 'forger_repository_review':
-        return reviewRepository(String(args.sessionId));
-      case 'forger_repository_publish':
-        return publishRepository(String(args.sessionId), String(args.reviewToken ?? ''));
-      case 'forger_repository_pull_request_create':
-        return createRepositoryPullRequest(String(args.sessionId), {
-          title: typeof args.title === 'string' ? args.title : undefined,
-          body: typeof args.body === 'string' ? args.body : undefined,
-          draft: typeof args.draft === 'boolean' ? args.draft : undefined
-        });
-      default:
-        throw new Error(`Unknown tool: ${name}`);
-    }
+    if (!isMutatingTool(name)) return dispatch(name, args);
+    const sessionId = String(args.sessionId ?? '');
+    if (!sessionId) throw new Error('sessionId is required for a mutating tool');
+    return withSessionMutationLease(sessionId, async () => dispatch(name, args));
   });
 
   return { content: [{ type: 'text', text: JSON.stringify(value) }] };
