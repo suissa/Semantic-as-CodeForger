@@ -40,7 +40,7 @@ export async function readState(sessionId: string): Promise<ForgeState> {
   return JSON.parse(await readFile(statePath(sessionId), 'utf8')) as ForgeState;
 }
 
-async function saveState(state: ForgeState): Promise<void> {
+export async function saveState(state: ForgeState): Promise<void> {
   state.updatedAt = new Date().toISOString();
   await writeText(statePath(state.sessionId), JSON.stringify(state, null, 2));
 }
