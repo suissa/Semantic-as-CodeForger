@@ -3,8 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { artifactKinds, type SemanticArtifact } from '../shared/types.js';
 import { finalize, initializeSession, recordTurn, snapshot, upsertArtifact } from './project.js';
+import { publishRepository, reviewRepository, setRepositoryTarget } from './github.js';
 
-const server = new Server({ name: 'semantic-as-code-forger-mcp', version: '0.1.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'semantic-as-code-forger-mcp', version: '0.2.0' }, { capabilities: { tools: {} } });
 
 const tools = [
   {
@@ -53,6 +54,30 @@ const tools = [
     name: 'forger_finalize',
     description: 'Freeze the current semantic interview into a reviewable Blueprint summary and trace after validation.',
     inputSchema: { type: 'object', additionalProperties: false, required: ['sessionId'], properties: { sessionId: { type: 'string' } } }
+  },
+  {
+    name: 'forger_repository_target_set',
+    description: 'Configure the GitHub repository, base branch, review branch and optional destination path for a finalized Blueprint.',
+    inputSchema: {
+      type: 'object', additionalProperties: false, required: ['sessionId', 'repository'],
+      properties: {
+        sessionId: { type: 'string' }, repository: { type: 'string', description: 'owner/name' },
+        baseBranch: { type: 'string' }, targetBranch: { type: 'string' }, pathPrefix: { type: 'string' }
+      }
+    }
+  },
+  {
+    name: 'forger_repository_review',
+    description: 'Create a non-mutating GitHub diff review for the finalized workspace and mint the review token required for publication.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['sessionId'], properties: { sessionId: { type: 'string' } } }
+  },
+  {
+    name: 'forger_repository_publish',
+    description: 'Publish exactly the reviewed Blueprint diff to GitHub. Requires the latest review token and rejects stale branch/workspace state.',
+    inputSchema: {
+      type: 'object', additionalProperties: false, required: ['sessionId', 'reviewToken'],
+      properties: { sessionId: { type: 'string' }, reviewToken: { type: 'string' } }
+    }
   }
 ];
 
@@ -77,6 +102,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       break;
     case 'forger_finalize':
       value = await finalize(String(args.sessionId));
+      break;
+    case 'forger_repository_target_set':
+      value = await setRepositoryTarget(String(args.sessionId), {
+        repository: String(args.repository ?? ''),
+        baseBranch: typeof args.baseBranch === 'string' ? args.baseBranch : undefined,
+        targetBranch: typeof args.targetBranch === 'string' ? args.targetBranch : undefined,
+        pathPrefix: typeof args.pathPrefix === 'string' ? args.pathPrefix : undefined
+      });
+      break;
+    case 'forger_repository_review':
+      value = await reviewRepository(String(args.sessionId));
+      break;
+    case 'forger_repository_publish':
+      value = await publishRepository(String(args.sessionId), String(args.reviewToken ?? ''));
       break;
     default:
       throw new Error(`Unknown tool: ${name}`);
