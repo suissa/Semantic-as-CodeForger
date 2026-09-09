@@ -23,8 +23,8 @@ export const interviewPhases: InterviewPhase[] = [
   {
     id: 'entities',
     title: 'Entidades e identidade',
-    goal: 'Descobrir entidades, propriedades, identidade semântica e relações de identidade contextual.',
-    question: 'Quais entidades precisam existir? Para cada uma, o que a identifica de forma canônica, quais propriedades importam e quais relações completam seu comportamento?'
+    goal: 'Descobrir entidades, propriedades, identidade semântica, características canônicas e relações que formam identidade contextual ou completam comportamento.',
+    question: 'Quais entidades precisam existir? Para cada uma, o que a identifica semanticamente, quais propriedades são características canônicas e existe algum caso em que uma propriedade dela combinada com uma característica de outra Entity cria uma identidade única ou é necessária para completar seu comportamento?'
   },
   {
     id: 'types',
@@ -72,7 +72,7 @@ export const interviewPhases: InterviewPhase[] = [
     id: 'review',
     title: 'Revisão',
     goal: 'Fechar lacunas antes de congelar o Blueprint.',
-    question: 'Revise o modelo formado: há alguma entidade, Intent, Action, regra, fluxo ou integração importante que ainda não apareceu ou algo que foi interpretado de forma errada?'
+    question: 'Revise o modelo formado: há alguma entidade, relação de identidade, Intent, Action, regra, fluxo ou integração importante que ainda não apareceu ou algo que foi interpretado de forma errada?'
   }
 ];
 
