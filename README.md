@@ -2,7 +2,7 @@
 
 A fullstack TypeScript application that turns a conversation about a system into an incrementally materialized **AllasCode Blueprint**.
 
-The web UI behaves like an architecture interview. The backend extracts semantic artifacts and, instead of writing files directly, acts as an **MCP client**. A dedicated MCP server is the mutation boundary that creates and validates the project tree.
+The web UI behaves like an architecture interview. The backend extracts semantic artifacts and, instead of writing project files directly, acts as an **MCP client**. A dedicated MCP server is the mutation boundary that creates, validates and can publish the finalized project tree.
 
 ## Why this shape
 
@@ -18,11 +18,15 @@ Backend MCP client
 Governed Blueprint materializer
       ↓
 AllasCode project tree
+      ↓ finalize
+Repository review gate
+      ↓ explicit approval
+GitHub branch
 ```
 
 This keeps LLM reasoning probabilistic while project mutation is deterministic. The model cannot choose arbitrary paths or rename structural result events.
 
-## AllasCode rules encoded in v0.1
+## AllasCode rules encoded
 
 - Intent is modeled as an immutable desired outcome.
 - Reusable `atomic_behavior` is distinct from an Intent-instantiated `domain_action`.
@@ -32,8 +36,9 @@ This keeps LLM reasoning probabilistic while project mutation is deterministic. 
 - Semantic identity is captured before storage/transport concerns.
 - The interviewer preserves unknowns instead of fabricating domain rules.
 - Implementation is intentionally deferred until the semantic contract is accepted.
+- Repository publication is impossible without an explicit, fresh diff review.
 
-The materializer covers the Blueprint families used by the project: Agents, Entities/Properties, semantic Types, Contexts, Intents, AtomicAction Behaviors, Domain Actions, Flows, Events, Policies, Constraints, Capabilities, Infrastructure and architecture decisions.
+The materializer covers Agents, Entities/Properties, semantic Types, Contexts, Intents, AtomicAction Behaviors, Domain Actions, Flows, Events, Policies, Constraints, Capabilities, Infrastructure and architecture decisions.
 
 ## Run
 
@@ -57,6 +62,14 @@ LLM_MODEL=gpt-5
 
 Without an API key the interview still runs deterministically and preserves answers/facts, but it does not attempt rich artifact extraction from free-form language.
 
+To publish reviewed Blueprints to GitHub, configure a narrowly scoped token:
+
+```bash
+FORGER_GITHUB_TOKEN=...
+```
+
+Read access is sufficient to build a review. Publishing requires repository Contents write permission. The token is read only by the backend/MCP process and is never persisted into Forge state or generated project files.
+
 ## API
 
 - `POST /api/sessions` — start a project interview.
@@ -64,6 +77,9 @@ Without an API key the interview still runs deterministically and preserves answ
 - `POST /api/sessions/:id/messages` — answer the next interview question.
 - `POST /api/sessions/:id/finalize` — freeze summary + trace.
 - `GET /api/sessions/:id/export` — download the generated Blueprint as ZIP.
+- `POST /api/sessions/:id/repository/target` — configure `owner/repo`, base branch, review branch and optional path prefix.
+- `POST /api/sessions/:id/repository/review` — compute a non-mutating diff and mint its review token.
+- `POST /api/sessions/:id/repository/publish` — publish only the exact reviewed diff.
 
 ## MCP tools
 
@@ -72,8 +88,28 @@ Without an API key the interview still runs deterministically and preserves answ
 - `forger_session_record_turn`
 - `forger_session_snapshot`
 - `forger_finalize`
+- `forger_repository_target_set`
+- `forger_repository_review`
+- `forger_repository_publish`
 
-The backend spawns the MCP server over stdio and uses those tools for every persisted mutation. The server writes only inside `.forger-workspaces/<session>/project` and sanitizes all path segments.
+The backend spawns the MCP server over stdio and uses those tools for every persisted mutation. The server writes only inside `.forger-workspaces/<session>/project` and sanitizes all project path segments.
+
+## Repository review gate
+
+Publication is intentionally a three-step operation:
+
+1. Configure a GitHub target. If no review branch is supplied, the Forger derives `forger/<project>-<session>`.
+2. Generate a review. The MCP server reads the remote Git tree and compares Git blob hashes without writing anything to the repository.
+3. Explicitly approve and publish using the generated review token.
+
+The token binds repository, destination branch/path, parent commit SHA and the exact hash of every generated file. Publish is rejected if:
+
+- the workspace changed after review;
+- the base/target branch moved after review;
+- a different review token is supplied;
+- the same review was already published.
+
+The publisher overlays only generated files. Existing remote files that are absent from the Forger workspace are preserved rather than deleted.
 
 ## Interview phases
 
