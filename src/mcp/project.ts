@@ -4,6 +4,7 @@ import YAML from 'yaml';
 import type { ForgeState, SemanticArtifact, ValidationFinding } from '../shared/types.js';
 import { materializeBehaviorFromPinnedBlueprint, semanticDocument, writeBlueprintProvenance } from './blueprint-source.js';
 import { materializeIdentityGraph, validateIdentityGraph } from './identity.js';
+import { materializeTwoFlow, validateTwoFlow } from './twoflow.js';
 
 const root = resolve(process.env.FORGER_WORKSPACE_ROOT ?? '.forger-workspaces');
 
@@ -89,7 +90,8 @@ export async function initializeSession(input: { sessionId: string; projectName:
       self_healing_required: blueprint.compatibility.selfHealingRequired,
       intent_immutable: blueprint.compatibility.intentImmutable,
       semantic_identity_graph: true,
-      cross_entity_identity: true
+      cross_entity_identity: true,
+      twoflow_ast: true
     },
     generation: {
       preserve_unknowns: blueprint.compatibility.preserveUnknowns,
@@ -158,6 +160,9 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
   if (normalized.kind === 'entity' || normalized.kind === 'property' || normalized.kind === 'relationship' || normalized.kind === 'identity_rule') {
     await materializeIdentityGraph(projectDir(sessionId), state);
   }
+  if (normalized.kind === 'flow') {
+    await materializeTwoFlow(projectDir(sessionId), normalized);
+  }
 
   await saveState(state);
   return normalized;
@@ -192,6 +197,7 @@ export function validateState(state: ForgeState): ValidationFinding[] {
         findings.push({ severity: 'warning', code: 'ACTION_WITHOUT_LISTEN_EVENT', message: 'Domain Action ainda não possui evento ouvido injetado pelo fluxo.', artifact: artifact.canonicalLabel });
       }
     }
+    if (artifact.kind === 'flow') findings.push(...validateTwoFlow(artifact));
   }
   findings.push(...validateIdentityGraph(state));
   return findings;
@@ -221,6 +227,7 @@ export async function finalize(sessionId: string): Promise<{ state: ForgeState; 
   if (errors.length) throw new Error(`Cannot finalize: ${errors.map((x) => x.code).join(', ')}`);
   state.finalizedAt = new Date().toISOString();
   await materializeIdentityGraph(projectDir(sessionId), state);
+  for (const flow of state.artifacts.filter((artifact) => artifact.kind === 'flow')) await materializeTwoFlow(projectDir(sessionId), flow);
   await writeText(join(projectDir(sessionId), 'PROJECT_SUMMARY.md'), `# ${state.projectName} — Semantic Blueprint\n\n${state.summary}\n\n## Facts captured\n${state.facts.map((x) => `- ${x}`).join('\n')}\n\n## Artifacts\n${state.artifacts.map((x) => `- **${x.kind}** \`${x.canonicalLabel}\` — ${x.summary}`).join('\n')}\n`);
   await writeText(join(projectDir(sessionId), 'docs/INTERVIEW_TRACE.md'), `# Interview trace\n\n${state.turns.map((turn) => `## ${turn.role}\n\n${turn.content}`).join('\n\n')}\n`);
   await writeText(join(projectDir(sessionId), '.allascode/forge-state.json'), JSON.stringify(state, null, 2));
