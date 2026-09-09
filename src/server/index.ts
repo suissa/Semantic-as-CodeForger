@@ -100,7 +100,7 @@ app.get('/api/sessions/:sessionId/export', asyncRoute(async (req, res) => {
   const directory = getProjectDirectory(sessionId);
   res.attachment(`allascode-${sessionId}.zip`);
   const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.on('error', (error) => { throw error; });
+  archive.on('error', (error) => res.destroy(error));
   archive.pipe(res);
   archive.directory(directory, false);
   await archive.finalize();
@@ -109,7 +109,10 @@ app.get('/api/sessions/:sessionId/export', asyncRoute(async (req, res) => {
 const clientDir = resolve('dist/client');
 if (existsSync(clientDir)) {
   app.use(express.static(clientDir));
-  app.get('*', (_req, res) => res.sendFile(resolve(clientDir, 'index.html')));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api/')) { next(); return; }
+    res.sendFile(resolve(clientDir, 'index.html'));
+  });
 }
 
 const server = app.listen(port, () => console.log(`[forger] http://localhost:${port}`));
