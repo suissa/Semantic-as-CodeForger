@@ -110,7 +110,9 @@ app.post('/api/sessions/:sessionId/repository/target', asyncRoute(async (req, re
     repository,
     baseBranch: typeof req.body?.baseBranch === 'string' ? req.body.baseBranch : undefined,
     targetBranch: typeof req.body?.targetBranch === 'string' ? req.body.targetBranch : undefined,
-    pathPrefix: typeof req.body?.pathPrefix === 'string' ? req.body.pathPrefix : undefined
+    pathPrefix: typeof req.body?.pathPrefix === 'string' ? req.body.pathPrefix : undefined,
+    pullRequestPolicy: typeof req.body?.pullRequestPolicy === 'string' ? req.body.pullRequestPolicy : undefined,
+    pullRequestDraft: req.body?.pullRequestDraft === true
   });
   res.json(await sessionSnapshot(sessionId));
 }));
@@ -126,6 +128,17 @@ app.post('/api/sessions/:sessionId/repository/publish', asyncRoute(async (req, r
   const reviewToken = String(req.body?.reviewToken ?? '').trim();
   if (!reviewToken) { res.status(400).json({ error: 'reviewToken is required' }); return; }
   await mcp.call('forger_repository_publish', { sessionId, reviewToken });
+  res.json(await sessionSnapshot(sessionId));
+}));
+
+app.post('/api/sessions/:sessionId/repository/pull-request', asyncRoute(async (req, res) => {
+  const sessionId = routeParam(req, 'sessionId');
+  await mcp.call('forger_repository_pull_request_create', {
+    sessionId,
+    title: typeof req.body?.title === 'string' ? req.body.title : undefined,
+    body: typeof req.body?.body === 'string' ? req.body.body : undefined,
+    draft: typeof req.body?.draft === 'boolean' ? req.body.draft : undefined
+  });
   res.json(await sessionSnapshot(sessionId));
 }));
 
