@@ -5,6 +5,7 @@ import type { ForgeState, SemanticArtifact, ValidationFinding } from '../shared/
 import { materializeBehaviorFromPinnedBlueprint, semanticDocument, writeBlueprintProvenance } from './blueprint-source.js';
 import { materializeFormalization, validateFormalization } from './formalization.js';
 import { materializeIdentityGraph, validateIdentityGraph } from './identity.js';
+import { appendInterviewEvent, exportInterviewEventLog, initializeInterviewEventLog, replayInterviewState } from './session-events.js';
 import { materializeTwoFlow, validateTwoFlow } from './twoflow.js';
 
 const root = resolve(process.env.FORGER_WORKSPACE_ROOT ?? '.forger-workspaces');
@@ -41,7 +42,14 @@ async function writeYaml(path: string, value: unknown): Promise<void> {
 }
 
 export async function readState(sessionId: string): Promise<ForgeState> {
-  return JSON.parse(await readFile(statePath(sessionId), 'utf8')) as ForgeState;
+  const snapshot = JSON.parse(await readFile(statePath(sessionId), 'utf8')) as ForgeState;
+  const replayed = await replayInterviewState(sessionDir(sessionId));
+  if (!replayed) return snapshot;
+  return {
+    ...replayed,
+    repository: snapshot.repository,
+    updatedAt: snapshot.updatedAt > replayed.updatedAt ? snapshot.updatedAt : replayed.updatedAt
+  };
 }
 
 export async function saveState(state: ForgeState): Promise<void> {
@@ -93,7 +101,8 @@ export async function initializeSession(input: { sessionId: string; projectName:
       semantic_identity_graph: true,
       cross_entity_identity: true,
       twoflow_ast: true,
-      formal_proof_claim_requires_evidence: true
+      formal_proof_claim_requires_evidence: true,
+      interview_state_event_sourced: true
     },
     generation: {
       preserve_unknowns: blueprint.compatibility.preserveUnknowns,
@@ -106,6 +115,7 @@ export async function initializeSession(input: { sessionId: string; projectName:
     `# ${state.projectName}\n\n${state.summary || 'AllasCode project forged from a semantic interview.'}\n\n> Generated incrementally by Semantic-as-Code Forger against pinned AllasCode-Blueprint \`${blueprint.commit}\`.\n`
   );
   await materializeIdentityGraph(directory, state);
+  await initializeInterviewEventLog(sessionDir(state.sessionId), state);
   await saveState(state);
   return state;
 }
@@ -158,24 +168,29 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
   } else {
     await writeYaml(absolutePath, semanticDocument(normalized));
   }
-  if (normalized.kind === 'atomic_behavior' || normalized.kind === 'domain_action') {
-    await materializeBehaviorFromPinnedBlueprint(absolutePath, normalized);
-  }
-  if (normalized.kind === 'entity' || normalized.kind === 'property' || normalized.kind === 'relationship' || normalized.kind === 'identity_rule') {
-    await materializeIdentityGraph(projectDir(sessionId), state);
-  }
+  if (normalized.kind === 'atomic_behavior' || normalized.kind === 'domain_action') await materializeBehaviorFromPinnedBlueprint(absolutePath, normalized);
+  if (normalized.kind === 'entity' || normalized.kind === 'property' || normalized.kind === 'relationship' || normalized.kind === 'identity_rule') await materializeIdentityGraph(projectDir(sessionId), state);
   if (normalized.kind === 'flow') await materializeTwoFlow(projectDir(sessionId), normalized);
   if (normalized.kind === 'proof_obligation' || normalized.kind === 'evidence') await materializeFormalization(projectDir(sessionId), normalized);
 
+  await appendInterviewEvent(sessionDir(sessionId), { type: 'ArtifactUpserted', data: { artifact: normalized } });
   await saveState(state);
   return normalized;
 }
 
 export async function recordTurn(input: { sessionId: string; userMessage: string; assistantMessage: string; facts: string[]; phaseComplete: boolean }): Promise<ForgeState> {
   const state = await readState(input.sessionId);
-  const now = new Date().toISOString();
-  state.turns.push({ role: 'user', content: input.userMessage, at: now });
-  state.turns.push({ role: 'assistant', content: input.assistantMessage, at: now });
+  const event = await appendInterviewEvent(sessionDir(input.sessionId), {
+    type: 'TurnRecorded',
+    data: {
+      userMessage: input.userMessage,
+      assistantMessage: input.assistantMessage,
+      facts: input.facts,
+      phaseAdvanced: input.phaseComplete
+    }
+  });
+  state.turns.push({ role: 'user', content: input.userMessage, at: event.at });
+  state.turns.push({ role: 'assistant', content: input.assistantMessage, at: event.at });
   state.facts.push(...input.facts.filter((fact) => !state.facts.includes(fact)));
   if (input.phaseComplete) state.phaseIndex += 1;
   await saveState(state);
@@ -190,15 +205,9 @@ export function validateState(state: ForgeState): ValidationFinding[] {
 
   for (const artifact of state.artifacts) {
     if (artifact.kind === 'atomic_behavior' || artifact.kind === 'domain_action') {
-      if (!Array.isArray(artifact.data.invariants) || artifact.data.invariants.length === 0) {
-        findings.push({ severity: 'warning', code: 'BEHAVIOR_WITHOUT_INVARIANTS', message: 'Behavior sem invariantes explícitas.', artifact: artifact.canonicalLabel });
-      }
-      if (!Array.isArray(artifact.data.forbidden) || artifact.data.forbidden.length === 0) {
-        findings.push({ severity: 'warning', code: 'BEHAVIOR_WITHOUT_FORBIDDEN', message: 'Behavior não declara o que não pode acontecer.', artifact: artifact.canonicalLabel });
-      }
-      if (artifact.kind === 'domain_action' && typeof artifact.data.listenEvent !== 'string') {
-        findings.push({ severity: 'warning', code: 'ACTION_WITHOUT_LISTEN_EVENT', message: 'Domain Action ainda não possui evento ouvido injetado pelo fluxo.', artifact: artifact.canonicalLabel });
-      }
+      if (!Array.isArray(artifact.data.invariants) || artifact.data.invariants.length === 0) findings.push({ severity: 'warning', code: 'BEHAVIOR_WITHOUT_INVARIANTS', message: 'Behavior sem invariantes explícitas.', artifact: artifact.canonicalLabel });
+      if (!Array.isArray(artifact.data.forbidden) || artifact.data.forbidden.length === 0) findings.push({ severity: 'warning', code: 'BEHAVIOR_WITHOUT_FORBIDDEN', message: 'Behavior não declara o que não pode acontecer.', artifact: artifact.canonicalLabel });
+      if (artifact.kind === 'domain_action' && typeof artifact.data.listenEvent !== 'string') findings.push({ severity: 'warning', code: 'ACTION_WITHOUT_LISTEN_EVENT', message: 'Domain Action ainda não possui evento ouvido injetado pelo fluxo.', artifact: artifact.canonicalLabel });
     }
     if (artifact.kind === 'flow') findings.push(...validateTwoFlow(artifact));
   }
@@ -235,6 +244,8 @@ export async function finalize(sessionId: string): Promise<{ state: ForgeState; 
   for (const artifact of state.artifacts.filter((item) => item.kind === 'proof_obligation' || item.kind === 'evidence')) await materializeFormalization(projectDir(sessionId), artifact);
   await writeText(join(projectDir(sessionId), 'PROJECT_SUMMARY.md'), `# ${state.projectName} — Semantic Blueprint\n\n${state.summary}\n\n## Facts captured\n${state.facts.map((x) => `- ${x}`).join('\n')}\n\n## Artifacts\n${state.artifacts.map((x) => `- **${x.kind}** \`${x.canonicalLabel}\` — ${x.summary}`).join('\n')}\n`);
   await writeText(join(projectDir(sessionId), 'docs/INTERVIEW_TRACE.md'), `# Interview trace\n\n${state.turns.map((turn) => `## ${turn.role}\n\n${turn.content}`).join('\n\n')}\n`);
+  await appendInterviewEvent(sessionDir(sessionId), { type: 'SessionFinalized', data: { finalizedAt: state.finalizedAt } });
+  await exportInterviewEventLog(sessionDir(sessionId), projectDir(sessionId));
   await writeText(join(projectDir(sessionId), '.allascode/forge-state.json'), JSON.stringify(state, null, 2));
   await saveState(state);
   return { state, validation };
