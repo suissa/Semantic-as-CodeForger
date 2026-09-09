@@ -26,6 +26,11 @@ export interface RuntimeVerification {
   verified: Array<{ upstreamPath: string; localPath: string; role: string; blobSha: string; bytes: number }>;
 }
 
+type Ajv2020Constructor = new (options?: { allErrors?: boolean; strict?: boolean }) => {
+  compile(schema: object): ValidateFunction;
+};
+
+const Ajv2020Runtime = Ajv2020 as unknown as Ajv2020Constructor;
 const lockPath = resolve(process.env.FORGER_RUNTIME_LOCK ?? 'runtime.lock.json');
 let validatorPromise: Promise<ValidateFunction> | undefined;
 
@@ -107,7 +112,7 @@ async function runtimeValidator(): Promise<ValidateFunction> {
       const lock = await loadRuntimeLock();
       const schemaSource = sourceByRole(lock, 'model-schema');
       const schema = JSON.parse(await readFile(resolve(schemaSource.localPath), 'utf8')) as object;
-      const ajv = new Ajv2020({ allErrors: true, strict: true });
+      const ajv = new Ajv2020Runtime({ allErrors: true, strict: true });
       return ajv.compile(schema);
     })();
   }
