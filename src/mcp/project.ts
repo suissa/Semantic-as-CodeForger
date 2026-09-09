@@ -8,6 +8,7 @@ import { materializeIdentityGraph, validateIdentityGraph } from './identity.js';
 import { assertArtifactQuota, assertSessionInput, assertTurnQuota } from './quotas.js';
 import { writeRuntimeConformance } from './runtime-source.js';
 import { appendInterviewEvent, exportInterviewEventLog, initializeInterviewEventLog, replayInterviewState } from './session-events.js';
+import { checkpointSessionLease } from './session-mutation.js';
 import { currentTenantId, tenantWorkspaceRoot } from './tenant-context.js';
 import { materializeTwoFlow, validateTwoFlow } from './twoflow.js';
 
@@ -36,7 +37,9 @@ function statePath(sessionId: string, tenantId = currentTenantId()): string {
 }
 
 async function writeText(path: string, content: string): Promise<void> {
+  await checkpointSessionLease();
   await mkdir(dirname(path), { recursive: true });
+  await checkpointSessionLease();
   await writeFile(path, content, 'utf8');
 }
 
@@ -91,8 +94,10 @@ export async function initializeSession(input: { sessionId: string; projectName:
   };
 
   const directory = projectDir(state.sessionId);
+  await checkpointSessionLease();
   await mkdir(directory, { recursive: true });
   const blueprint = await writeBlueprintProvenance(directory);
+  await checkpointSessionLease();
   await writeYaml(join(directory, 'manifest.yml'), {
     api_version: 'allascode/v1',
     kind: 'Project',
@@ -120,7 +125,8 @@ export async function initializeSession(input: { sessionId: string; projectName:
       twoflow_ast: true,
       formal_proof_claim_requires_evidence: true,
       interview_state_event_sourced: true,
-      runtime_model_contract_pinned: true
+      runtime_model_contract_pinned: true,
+      session_mutation_fenced: true
     },
     generation: {
       preserve_unknowns: blueprint.compatibility.preserveUnknowns,
@@ -133,7 +139,9 @@ export async function initializeSession(input: { sessionId: string; projectName:
     `# ${state.projectName}\n\n${state.summary || 'AllasCode project forged from a semantic interview.'}\n\n> Generated incrementally by Semantic-as-Code Forger against pinned AllasCode-Blueprint \`${blueprint.commit}\`.\n`
   );
   await materializeIdentityGraph(directory, state);
+  await checkpointSessionLease();
   await writeRuntimeConformance(directory, state);
+  await checkpointSessionLease();
   await initializeInterviewEventLog(sessionDir(state.sessionId), state);
   await saveState(state);
   return state;
@@ -188,11 +196,24 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
   } else {
     await writeYaml(absolutePath, semanticDocument(normalized));
   }
-  if (normalized.kind === 'atomic_behavior' || normalized.kind === 'domain_action') await materializeBehaviorFromPinnedBlueprint(absolutePath, normalized);
-  if (normalized.kind === 'entity' || normalized.kind === 'property' || normalized.kind === 'relationship' || normalized.kind === 'identity_rule') await materializeIdentityGraph(projectDir(sessionId), state);
-  if (normalized.kind === 'flow') await materializeTwoFlow(projectDir(sessionId), normalized);
-  if (normalized.kind === 'proof_obligation' || normalized.kind === 'evidence') await materializeFormalization(projectDir(sessionId), normalized);
+  if (normalized.kind === 'atomic_behavior' || normalized.kind === 'domain_action') {
+    await materializeBehaviorFromPinnedBlueprint(absolutePath, normalized);
+    await checkpointSessionLease();
+  }
+  if (normalized.kind === 'entity' || normalized.kind === 'property' || normalized.kind === 'relationship' || normalized.kind === 'identity_rule') {
+    await materializeIdentityGraph(projectDir(sessionId), state);
+    await checkpointSessionLease();
+  }
+  if (normalized.kind === 'flow') {
+    await materializeTwoFlow(projectDir(sessionId), normalized);
+    await checkpointSessionLease();
+  }
+  if (normalized.kind === 'proof_obligation' || normalized.kind === 'evidence') {
+    await materializeFormalization(projectDir(sessionId), normalized);
+    await checkpointSessionLease();
+  }
 
+  await checkpointSessionLease();
   await appendInterviewEvent(sessionDir(sessionId), { type: 'ArtifactUpserted', data: { artifact: normalized } });
   await saveState(state);
   return normalized;
@@ -201,6 +222,7 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
 export async function recordTurn(input: { sessionId: string; userMessage: string; assistantMessage: string; facts: string[]; phaseComplete: boolean }): Promise<ForgeState> {
   const state = await readState(input.sessionId);
   assertTurnQuota(state, input);
+  await checkpointSessionLease();
   const event = await appendInterviewEvent(sessionDir(input.sessionId), {
     type: 'TurnRecorded',
     data: {
@@ -261,9 +283,17 @@ export async function finalize(sessionId: string): Promise<{ state: ForgeState; 
   if (errors.length) throw new Error(`Cannot finalize: ${errors.map((x) => x.code).join(', ')}`);
   state.finalizedAt = new Date().toISOString();
   await materializeIdentityGraph(projectDir(sessionId), state);
-  for (const flow of state.artifacts.filter((artifact) => artifact.kind === 'flow')) await materializeTwoFlow(projectDir(sessionId), flow);
-  for (const artifact of state.artifacts.filter((item) => item.kind === 'proof_obligation' || item.kind === 'evidence')) await materializeFormalization(projectDir(sessionId), artifact);
+  await checkpointSessionLease();
+  for (const flow of state.artifacts.filter((artifact) => artifact.kind === 'flow')) {
+    await materializeTwoFlow(projectDir(sessionId), flow);
+    await checkpointSessionLease();
+  }
+  for (const artifact of state.artifacts.filter((item) => item.kind === 'proof_obligation' || item.kind === 'evidence')) {
+    await materializeFormalization(projectDir(sessionId), artifact);
+    await checkpointSessionLease();
+  }
   await writeRuntimeConformance(projectDir(sessionId), state);
+  await checkpointSessionLease();
   await writeText(join(projectDir(sessionId), 'PROJECT_SUMMARY.md'), `# ${state.projectName} — Semantic Blueprint\n\n${state.summary}\n\n## Facts captured\n${state.facts.map((x) => `- ${x}`).join('\n')}\n\n## Artifacts\n${state.artifacts.map((x) => `- **${x.kind}** \`${x.canonicalLabel}\` — ${x.summary}`).join('\n')}\n`);
   await writeText(join(projectDir(sessionId), 'docs/INTERVIEW_TRACE.md'), `# Interview trace\n\n${state.turns.map((turn) => `## ${turn.role}\n\n${turn.content}`).join('\n\n')}\n`);
   await appendInterviewEvent(sessionDir(sessionId), { type: 'SessionFinalized', data: { finalizedAt: state.finalizedAt } });
