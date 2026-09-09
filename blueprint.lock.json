@@ -6,17 +6,17 @@
   "sources": [
     {
       "path": "Blueprint/folder-structure.md",
-      "blobSha": "c8dd9344836005d942309978475e9ea0e3e6583b",
+      "blobSha": "c8dd954a5348f1f980d77e63437aae70865c296c",
       "role": "structure"
     },
     {
       "path": "Blueprint/config/required.yml",
-      "blobSha": "10d93d55e07c49ca4b545f2ebdb1074465b40942",
+      "blobSha": "10d93fe2c38c98fe1fec57b174fa83f667062710",
       "role": "required-config"
     },
     {
       "path": "Blueprint/schemas/README.md",
-      "blobSha": "17e2a4e9e50c8027d8467cf88885b7260fd901a4",
+      "blobSha": "244585243d38a3f6b750ef17b0478713022ed013",
       "role": "schema-index"
     },
     {
