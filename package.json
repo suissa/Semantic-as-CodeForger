@@ -1,6 +1,6 @@
 {
   "name": "semantic-as-code-forger",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "mcp": "tsx src/mcp/server.ts",
     "blueprint:verify": "tsx src/cli/blueprint-source.ts verify",
     "blueprint:sync": "tsx src/cli/blueprint-source.ts sync",
-    "test": "tsx --test src/mcp/*.test.ts",
+    "test": "tsx --test src/mcp/*.test.ts src/server/*.test.ts",
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server/index.ts",
     "typecheck": "tsc --noEmit"
@@ -19,6 +19,7 @@
     "@modelcontextprotocol/sdk": "^1.17.0",
     "archiver": "^7.0.1",
     "express": "^5.1.0",
+    "jose": "^6.2.12",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tsx": "^4.20.0",
