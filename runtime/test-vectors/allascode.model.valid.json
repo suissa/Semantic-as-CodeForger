@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "kind": "allascode-model",
+  "model": { "canonical_label": "Example.Commerce", "semantics_path": "allascode.semantics", "version": "0.1.0" },
+  "framework": { "relationship": "depends-on-allascode", "embedded": false, "constraint": ">=0.1.0" },
+  "projections": [{ "language": "typescript", "role": "reference", "path": "src" }],
+  "repository": { "independent": true, "boundary_invariants": ["model-depends-on-framework", "framework-does-not-depend-on-model", "canonical-semantics-remain-external", "no-domain-labels-in-framework"] },
+  "conformance": { "canonical_source": "allascode.semantics", "profile": "v1" }
+}
