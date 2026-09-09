@@ -15,7 +15,7 @@ function textPayload<T>(result: unknown): T {
   return JSON.parse(first!.text as string) as T;
 }
 
-test('MCP stdio boundary exposes governed tools and materializes a Domain Action', async () => {
+test('MCP stdio boundary exposes governed tenant-scoped tools and materializes a Domain Action', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'forger-mcp-conformance-'));
   const client = new Client({ name: 'forger-conformance-test', version: '1.0.0' });
   const transport = new StdioClientTransport({
@@ -41,15 +41,22 @@ test('MCP stdio boundary exposes governed tools and materializes a Domain Action
       'forger_repository_pull_request_create'
     ]) assert.ok(names.includes(required), `missing MCP tool: ${required}`);
 
+    for (const tool of listed.tools) {
+      const required = (tool.inputSchema as { required?: string[] }).required ?? [];
+      assert.ok(required.includes('tenantId'), `${tool.name} does not require tenantId`);
+    }
+
+    const tenantId = 'tenant-conformance';
     const sessionId = 'conformance-session';
     textPayload(await client.callTool({
       name: 'forger_session_init',
-      arguments: { sessionId, projectName: 'Conformance', summary: 'MCP boundary test' }
+      arguments: { tenantId, sessionId, projectName: 'Conformance', summary: 'MCP boundary test' }
     }));
 
     textPayload(await client.callTool({
       name: 'forger_artifact_upsert',
       arguments: {
+        tenantId,
         sessionId,
         artifact: {
           kind: 'domain_action',
@@ -69,13 +76,18 @@ test('MCP stdio boundary exposes governed tools and materializes a Domain Action
 
     const snapshot = textPayload<{ tree: string[]; state: { artifacts: Array<{ canonicalLabel: string }> } }>(await client.callTool({
       name: 'forger_session_snapshot',
-      arguments: { sessionId }
+      arguments: { tenantId, sessionId }
     }));
 
     assert.ok(snapshot.state.artifacts.some((artifact) => artifact.canonicalLabel === 'OrderAgent.PlaceOrder'));
     assert.ok(snapshot.tree.includes('intents/PlaceOrder/actions/OrderAgent-PlaceOrder/events/Ok.event.yml'));
     assert.ok(snapshot.tree.includes('intents/PlaceOrder/actions/OrderAgent-PlaceOrder/events/Error.event.yml'));
     assert.ok(snapshot.tree.includes('intents/PlaceOrder/actions/OrderAgent-PlaceOrder/specifications/self-healing.spec.yml'));
+
+    await assert.rejects(
+      () => client.callTool({ name: 'forger_session_snapshot', arguments: { sessionId } }),
+      /tenantId|required/i
+    );
   } finally {
     await client.close().catch(() => undefined);
     await rm(workspace, { recursive: true, force: true });
