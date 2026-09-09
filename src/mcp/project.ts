@@ -78,10 +78,15 @@ export async function saveState(state: ForgeState): Promise<void> {
 
 export async function initializeSession(input: { sessionId: string; projectName: string; summary: string }): Promise<ForgeState> {
   assertSessionInput(input.projectName, input.summary);
+  const normalizedSessionId = safeSegment(input.sessionId);
+  const existingSnapshot = await readSnapshotCache(normalizedSessionId);
+  const existingReplay = await replayInterviewState(sessionDir(normalizedSessionId));
+  if (existingSnapshot || existingReplay) throw new Error(`Forger session already exists: ${normalizedSessionId}`);
+
   const projectSlug = safeSegment(input.projectName.toLowerCase());
   const now = new Date().toISOString();
   const state: ForgeState = {
-    sessionId: safeSegment(input.sessionId),
+    sessionId: normalizedSessionId,
     projectName: input.projectName.trim(),
     projectSlug,
     summary: input.summary.trim(),
