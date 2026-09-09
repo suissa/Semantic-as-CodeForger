@@ -56,7 +56,7 @@ const tools = [
   }
 ];
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools as any }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const name = request.params.name;
   const args = (request.params.arguments ?? {}) as Record<string, unknown>;
