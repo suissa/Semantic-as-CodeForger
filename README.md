@@ -14,7 +14,7 @@ Semantic interviewer / extractor
 Authenticated tenant context
       ↓
 Backend MCP client
-      ↓ governed tool calls
+      ↓ governed + fenced tool calls
 Blueprint/runtime materializer
       ↓ pinned contracts
 AllasCode project tree
@@ -26,7 +26,7 @@ GitHub review branch
 Pull Request
 ```
 
-This keeps LLM reasoning probabilistic while mutation, tenancy, source pinning, repository review and formal-proof claims remain deterministic and governed.
+This keeps LLM reasoning probabilistic while mutation, tenancy, session ownership, source pinning, repository review and formal-proof claims remain deterministic and governed.
 
 ## AllasCode rules encoded
 
@@ -95,6 +95,7 @@ npm run dev
 - Web: `http://localhost:5173`
 - API: `http://localhost:8787`
 - MCP: `npm run mcp`
+- Reference control plane: `npm run control-plane`
 
 `FORGER_AUTH_MODE=disabled` is the backward-compatible local mode.
 
@@ -129,13 +130,13 @@ Raw tenant identifiers never become filesystem paths. Hosted storage uses opaque
 
 Every MCP tool requires `tenantId`; HTTP derives it from the verified principal and injects it rather than trusting request JSON. Local mode retains the legacy `.forger-workspaces/<session>` layout.
 
-The current hosted topology is intentionally **single-node**. Before horizontal replicas, replace local workspace storage and process-local rate limiting with shared durable equivalents.
+Horizontal v0.8 deployments use a shared POSIX workspace plus centralized rate-limit, audit and session-lease backends. The app and MCP process fail fast if `FORGER_INSTANCE_COUNT>1` is combined with node-local coordination.
 
-See [`docs/HOSTED_SECURITY.md`](docs/HOSTED_SECURITY.md) for the complete isolation, audit, quota and deployment model.
+See [`docs/HOSTED_SECURITY.md`](docs/HOSTED_SECURITY.md) and [`docs/HORIZONTAL_DEPLOYMENT.md`](docs/HORIZONTAL_DEPLOYMENT.md).
 
 ## Hosted hardening
 
-v0.6 includes:
+The hosted boundary includes:
 
 - per-tenant HTTP rate limiting;
 - MCP-level artifact/turn/message/fact/byte quotas;
@@ -146,7 +147,8 @@ v0.6 includes:
 - append-only operational audit records containing hashed tenant/subject identities only;
 - no authentication token/request body logging;
 - configurable session retention;
-- dry-run workspace GC by default.
+- dry-run workspace GC by default;
+- per-session renewable lease and fencing token for mutating MCP calls.
 
 ```bash
 npm run workspace:gc
@@ -154,6 +156,20 @@ npm run workspace:gc:apply
 ```
 
 The second command is the only one that deletes expired session directories.
+
+## Session lease and fencing
+
+Every mutating MCP operation runs under ownership of the opaque `(tenant, sessionId)` scope. Concurrent writers for the same scope are rejected. New ownership epochs receive monotonically increasing fencing tokens, long-running operations renew their lease, and authoritative state/Event-Sourcing writes validate that the held token is still current.
+
+In horizontal mode use:
+
+```bash
+FORGER_SESSION_LEASE_BACKEND=http
+FORGER_SESSION_LEASE_TTL_MS=30000
+FORGER_CONTROL_LEASE_ROOT=/srv/forger/leases
+```
+
+The reference control plane persists the highest fencing token per session scope, so coordinator restart does not reset fencing numbers. Sticky routing can still improve locality, but it is not the correctness mechanism.
 
 ## GitHub delivery
 
@@ -182,18 +198,18 @@ Repository target policy example:
 
 ## API
 
-- `GET /api/health` — unauthenticated process health.
+- `GET /api/health` — unauthenticated process health and non-secret runtime topology.
 - `POST /api/sessions` — start a project interview.
 - `GET /api/sessions/:id` — replay/read current state, tree and validation.
 - `POST /api/sessions/:id/messages` — answer the next interview question.
 - `POST /api/sessions/:id/finalize` — freeze summary, trace and exported event stream.
 - `GET /api/sessions/:id/export` — download the generated Blueprint as ZIP.
 - `POST /api/sessions/:id/repository/target` — configure repository/base/review branch/path and PR policy.
-- `POST /api/sessions/:id/repository/review` — compute a non-mutating diff and mint its review token.
+- `POST /api/sessions/:id/repository/review` — compute a non-mutating diff and mint the review token.
 - `POST /api/sessions/:id/repository/publish` — publish only the exact reviewed diff.
 - `POST /api/sessions/:id/repository/pull-request` — open or reuse a PR for the already-published reviewed branch.
 
-All API routes except health pass through authentication in hosted mode and tenant rate limiting.
+All API routes except health pass through authentication in hosted mode and tenant rate limiting. Lease contention or stale fencing returns `409 Conflict`.
 
 ## MCP tools
 
@@ -207,7 +223,7 @@ All API routes except health pass through authentication in hosted mode and tena
 - `forger_repository_publish`
 - `forger_repository_pull_request_create`
 
-Every MCP tool requires the opaque authenticated `tenantId`. The MCP server scopes the whole call using `AsyncLocalStorage`, and project/state paths derive from that tenant context.
+Every MCP tool requires the opaque authenticated `tenantId`. The MCP server scopes the whole call using `AsyncLocalStorage`, and project/state paths derive from that tenant context. Every mutating tool is additionally wrapped by the session lease/fencing protocol; `forger_session_snapshot` remains read-only and lock-free.
 
 ## Repository review and staleness gate
 
@@ -234,7 +250,7 @@ Before PR creation the Forger verifies that the target branch still points to th
 
 The authoritative interview history is append-only NDJSON. Snapshot state is a cache. A session can be resumed by durable `sessionId`, and replay rejects event sequence gaps instead of silently reconstructing partial state.
 
-Finalization exports `.allascode/interview-events.ndjson` with the generated Blueprint.
+Finalization exports `.allascode/interview-events.ndjson` with the generated Blueprint. Event append and snapshot writes are fencing checkpoints, so a stale writer cannot continue committing semantic history after another holder takes over.
 
 ## Tests and conformance
 
@@ -250,7 +266,7 @@ npm test
 npm run build
 ```
 
-Coverage includes semantic identity, deterministic 2flow, proof/evidence gates, Event Sourcing replay, tenant isolation, mandatory MCP tenant context, canonical runtime-model vectors, repository staleness, golden Blueprint materialization, quotas, workspace retention and real MCP stdio conformance.
+Coverage includes semantic identity, deterministic 2flow, proof/evidence gates, Event Sourcing replay, tenant isolation, mandatory MCP tenant context, canonical runtime-model vectors, repository staleness, golden Blueprint materialization, quotas, workspace retention, control-plane behavior, lease takeover/restart fencing and real MCP stdio conformance.
 
 ## Interview phases
 
@@ -270,4 +286,4 @@ Coverage includes semantic identity, deterministic 2flow, proof/evidence gates, 
 
 When the conversation yields an Action, the MCP materializer creates a package with docs, manifest/config/interface, schemas, fixed Ok/Error events, invariant/forbidden/self-healing specifications, micro `SKILL.md` and an implementation placeholder. Its provenance records the exact pinned Blueprint commit. Later turns refine the same canonical artifact instead of duplicating semantic identities.
 
-See [`skills/allascode-project-forger/SKILL.md`](skills/allascode-project-forger/SKILL.md), [`docs/HOSTED_SECURITY.md`](docs/HOSTED_SECURITY.md), and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+See [`skills/allascode-project-forger/SKILL.md`](skills/allascode-project-forger/SKILL.md), [`docs/HOSTED_SECURITY.md`](docs/HOSTED_SECURITY.md), [`docs/HORIZONTAL_DEPLOYMENT.md`](docs/HORIZONTAL_DEPLOYMENT.md), and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
