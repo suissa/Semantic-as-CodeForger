@@ -63,6 +63,7 @@ Rules:
 - Use relationship for a semantic link between Entities. Put data.fromEntity, data.toEntity, data.relation. If the relation is required for one Entity to have complete behavior, set data.behaviorCompleting=true and capture data.canonicalCharacteristic when known. This is not a foreign-key model.
 - Use identity_rule when identity is composed/context-specific. Put data.entity for the identity owner and data.components as [{entity, characteristic}, ...]. When one component comes from another Entity and the relation completes behavior, set data.behaviorCompleting=true. Capture data.context and data.uniqueness when explicitly known.
 - Never flatten a cross-Entity semantic identity into a database foreign key merely because the relation could later be stored that way.
+- For flow artifacts, preserve causal structure. When the user gives 2flow notation or the flow is explicit enough to serialize without inventing steps, put the exact/faithful 2flow text in data.twoFlow. Supported structural operators are ->, <-, ->>, <<-, [a, b] parallel groups, try, catch, and error#last-error. Do not rename these operators.
 - Capabilities describe what is required, not a vendor unless the user explicitly chose one.
 - If information is materially missing for the current phase, set phaseComplete=false and ask one focused follow-up question.
 - Do not duplicate existing artifacts unless the answer updates them.`;
