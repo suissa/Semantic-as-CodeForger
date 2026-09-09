@@ -1,6 +1,7 @@
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 interface WindowEntry {
   windowStart: number;
@@ -102,7 +103,8 @@ export function createControlPlaneServer() {
   });
 }
 
-if (process.env.NODE_ENV !== 'test') {
+const entrypoint = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
+if (entrypoint === import.meta.url) {
   const server = createControlPlaneServer();
   server.listen(port, () => console.log(`[forger-control-plane] http://localhost:${port}`));
 }
