@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://allascode.dev/schemas/allascode.model.schema.json",
+  "title": "AllasCode Independent Model Descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "model", "framework", "repository", "conformance"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "kind": { "const": "allascode-model" },
+    "model": {
+      "type": "object", "additionalProperties": false,
+      "required": ["canonical_label", "semantics_path"],
+      "properties": {
+        "canonical_label": { "type": "string", "minLength": 3, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
+        "semantics_path": { "$ref": "#/$defs/relativePath" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "framework": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relationship", "embedded"],
+      "properties": {
+        "relationship": { "const": "depends-on-allascode" },
+        "embedded": { "const": false },
+        "constraint": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projections": {
+      "type": "array", "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["language", "role", "path"],
+        "properties": {
+          "language": { "type": "string", "minLength": 1 },
+          "role": { "enum": ["reference", "generated", "runtime", "adapter"] },
+          "path": { "$ref": "#/$defs/relativePath" }
+        }
+      }
+    },
+    "repository": {
+      "type": "object", "additionalProperties": false,
+      "required": ["independent", "boundary_invariants"],
+      "properties": {
+        "independent": { "const": true },
+        "boundary_invariants": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "enum": ["model-depends-on-framework", "framework-does-not-depend-on-model", "canonical-semantics-remain-external", "no-domain-labels-in-framework"] }
+        }
+      }
+    },
+    "conformance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["canonical_source"],
+      "properties": {
+        "canonical_source": { "$ref": "#/$defs/relativePath" },
+        "profile": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": { "type": "string", "minLength": 1, "not": { "pattern": "^(?:/|[A-Za-z]:|\\\\|.*(?:^|/)\\.\\.(?:/|$))" } }
+  }
+}
