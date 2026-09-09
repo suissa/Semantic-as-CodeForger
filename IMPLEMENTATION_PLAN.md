@@ -79,10 +79,35 @@ Build a TypeScript fullstack Semantic-as-Code Forger that interviews a user abou
 - [x] Reuse an existing open head/base Pull Request instead of creating duplicates.
 - [x] Preserve successful branch publication even if automatic PR creation fails; expose the PR delivery error separately.
 
+## v0.6 — hosted isolation, canonical runtime contract and hardening implemented
+
+- [x] Provider-neutral `disabled|oidc` authentication mode.
+- [x] OIDC JWT signature, issuer, audience and allowed-algorithm verification with remote JWKS/discovery.
+- [x] Tenant derived only from a verified claim; secure default is `sub`, configurable for organization claims.
+- [x] Raw tenant identifiers never become filesystem paths; hosted tenant namespaces use SHA-256-derived opaque directories.
+- [x] Backward-compatible `local` workspace layout when authentication is disabled.
+- [x] AsyncLocalStorage tenant context so every internal mutation in one MCP call stays in the authenticated namespace.
+- [x] `tenantId` required on every MCP tool and rejected when absent.
+- [x] Concurrent tenant-isolation and MCP-boundary tests.
+- [x] Pin canonical `suissa/AllasCode` independent-model schema and official valid/invalid vectors in `runtime.lock.json`.
+- [x] Recalculate Git blob SHAs for every vendored runtime-contract file in CI.
+- [x] Optional byte-for-byte remote verification where a private-upstream credential is explicitly available.
+- [x] Validate official AllasCode model test vectors using JSON Schema Draft 2020-12.
+- [x] Generate and validate `allascode.model.json` for every forged project.
+- [x] Stamp generated projects with `.allascode/runtime.lock.json` and `docs/RUNTIME_CONFORMANCE.md`.
+- [x] Revalidate the runtime boundary before finalization.
+- [x] Per-tenant HTTP request rate limit with standard reset/retry headers.
+- [x] MCP-level artifact, turn, fact, message and artifact-byte quotas so direct MCP callers cannot bypass API limits.
+- [x] Request IDs, security headers, bounded JSON input and configurable server timeouts.
+- [x] Append-only operational audit log containing only hashed tenant/subject identities; credentials and request bodies are never logged.
+- [x] Configurable workspace retention for both legacy local sessions and hosted tenant namespaces.
+- [x] Workspace GC is dry-run by default and requires explicit `--apply` to delete expired sessions.
+
 ## Next slices
 
-1. Add authentication and multi-tenant workspace isolation before hosted use. This must be based on an explicit identity/tenant model rather than an arbitrary provider choice.
-2. Add canonical runtime/schema interface validation once those AllasCode interfaces are versioned and stable enough to pin like the Blueprint source.
-3. Add hosted deployment hardening: quotas, workspace lifecycle/retention, secret isolation, audit events and rate limits.
-4. Expand repository conformance with a disposable GitHub test repository in CI when a safe scoped test credential is available.
-5. Add optional generated-code phase only after semantic acceptance, keeping generated implementation separate from the semantic source of truth.
+1. Replace the process-local rate limiter with a shared/distributed limiter when horizontal multi-instance hosting is introduced.
+2. Add durable shared workspace/object storage before deploying more than one application instance; the current filesystem isolation is intentionally single-node.
+3. Add audit-log rotation/export/signing policy if compliance-grade operational evidence is required.
+4. Expand repository conformance with a disposable GitHub test repository in CI when a safe scoped cross-repository test credential is available.
+5. Add a first-party browser OIDC login/session flow only if the hosted product should not rely on a trusted same-origin identity proxy.
+6. Add optional generated-code phase only after semantic acceptance, keeping generated implementation separate from the semantic source of truth.
