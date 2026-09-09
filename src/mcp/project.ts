@@ -41,10 +41,23 @@ async function writeYaml(path: string, value: unknown): Promise<void> {
   await writeText(path, YAML.stringify(value, { lineWidth: 100 }));
 }
 
+async function readSnapshotCache(sessionId: string): Promise<ForgeState | undefined> {
+  try {
+    return JSON.parse(await readFile(statePath(sessionId), 'utf8')) as ForgeState;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
 export async function readState(sessionId: string): Promise<ForgeState> {
-  const snapshot = JSON.parse(await readFile(statePath(sessionId), 'utf8')) as ForgeState;
+  const snapshot = await readSnapshotCache(sessionId);
   const replayed = await replayInterviewState(sessionDir(sessionId));
-  if (!replayed) return snapshot;
+
+  if (!replayed && !snapshot) throw new Error(`Unknown Forger session: ${sessionId}`);
+  if (!replayed) return snapshot!;
+  if (!snapshot) return replayed;
+
   return {
     ...replayed,
     repository: snapshot.repository,
