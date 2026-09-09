@@ -124,21 +124,21 @@ test('HTTP control-plane backend shares rate decisions, lease fencing and audit 
     }
     if (req.url === '/v1/lease/renew') {
       const now = Number(body.now);
-      const valid = active?.holder === body.holder && active?.token === body.fencingToken && active.expiresAt > now;
-      if (valid) active!.expiresAt = now + Number(body.ttlMs);
-      res.end(JSON.stringify({ acquired: Boolean(valid), fencingToken: active?.token ?? leaseToken, expiresAt: active?.expiresAt ?? 0 }));
+      const valid = Boolean(active && active.holder === body.holder && active.token === body.fencingToken && active.expiresAt > now);
+      if (valid && active) active.expiresAt = now + Number(body.ttlMs);
+      res.end(JSON.stringify({ acquired: valid, fencingToken: active?.token ?? leaseToken, expiresAt: active?.expiresAt ?? 0 }));
       return;
     }
     if (req.url === '/v1/lease/validate') {
       const now = Number(body.now);
-      const valid = active?.holder === body.holder && active?.token === body.fencingToken && active.expiresAt > now;
-      res.end(JSON.stringify({ valid: Boolean(valid), fencingToken: active?.token ?? leaseToken, expiresAt: active?.expiresAt ?? 0 }));
+      const valid = Boolean(active && active.holder === body.holder && active.token === body.fencingToken && active.expiresAt > now);
+      res.end(JSON.stringify({ valid, fencingToken: active?.token ?? leaseToken, expiresAt: active?.expiresAt ?? 0 }));
       return;
     }
     if (req.url === '/v1/lease/release') {
-      const released = active?.holder === body.holder && active?.token === body.fencingToken;
+      const released = Boolean(active && active.holder === body.holder && active.token === body.fencingToken);
       if (released) active = undefined;
-      res.end(JSON.stringify({ released: Boolean(released), fencingToken: leaseToken }));
+      res.end(JSON.stringify({ released, fencingToken: leaseToken }));
       return;
     }
     res.statusCode = 404;
