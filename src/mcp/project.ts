@@ -6,6 +6,7 @@ import { materializeBehaviorFromPinnedBlueprint, semanticDocument, writeBlueprin
 import { materializeFormalization, validateFormalization } from './formalization.js';
 import { materializeIdentityGraph, validateIdentityGraph } from './identity.js';
 import { appendInterviewEvent, exportInterviewEventLog, initializeInterviewEventLog, replayInterviewState } from './session-events.js';
+import { currentTenantId, tenantWorkspaceRoot } from './tenant-context.js';
 import { materializeTwoFlow, validateTwoFlow } from './twoflow.js';
 
 const root = resolve(process.env.FORGER_WORKSPACE_ROOT ?? '.forger-workspaces');
@@ -20,16 +21,16 @@ function safeSegment(value: string): string {
   return cleaned;
 }
 
-function sessionDir(sessionId: string): string {
-  return join(root, safeSegment(sessionId));
+function sessionDir(sessionId: string, tenantId = currentTenantId()): string {
+  return join(tenantWorkspaceRoot(root, tenantId), safeSegment(sessionId));
 }
 
-function projectDir(sessionId: string): string {
-  return join(sessionDir(sessionId), 'project');
+function projectDir(sessionId: string, tenantId = currentTenantId()): string {
+  return join(sessionDir(sessionId, tenantId), 'project');
 }
 
-function statePath(sessionId: string): string {
-  return join(sessionDir(sessionId), 'forge-state.json');
+function statePath(sessionId: string, tenantId = currentTenantId()): string {
+  return join(sessionDir(sessionId, tenantId), 'forge-state.json');
 }
 
 async function writeText(path: string, content: string): Promise<void> {
@@ -264,6 +265,6 @@ export async function finalize(sessionId: string): Promise<{ state: ForgeState; 
   return { state, validation };
 }
 
-export function getProjectDirectory(sessionId: string): string {
-  return projectDir(sessionId);
+export function getProjectDirectory(sessionId: string, tenantId = currentTenantId()): string {
+  return projectDir(sessionId, tenantId);
 }
