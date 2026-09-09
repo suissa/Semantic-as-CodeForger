@@ -46,13 +46,43 @@ Build a TypeScript fullstack Semantic-as-Code Forger that interviews a user abou
 - [x] Stamp generated project and AtomicAction documents with the pinned Blueprint commit/profile.
 - [x] Add an explicit compatibility overlay so legacy upstream `success/failure` prose cannot override current structural `Ok/Error`, mandatory self-healing or immutable Intent semantics.
 
+## v0.4 — semantic graph, 2flow, proofs and replay implemented
+
+- [x] First-class `relationship` and `identity_rule` artifacts.
+- [x] Materialized `identity/graph.yml` with cross-Entity identity and behavior-completing relationships.
+- [x] Canonical-characteristic and composite-identity validation.
+- [x] Deterministic 2flow parser and AST generation.
+- [x] Mermaid `.mmd` visualization derived only from the deterministic AST.
+- [x] First-class `proof_obligation` and `evidence` artifacts.
+- [x] Agda stubs generated only for explicitly eligible proof kinds.
+- [x] Validation that prevents tests/logs/runtime events from being promoted to formal proof by themselves.
+- [x] Append-only interview Event Sourcing in NDJSON.
+- [x] State reconstruction from the event stream when the snapshot cache is absent.
+- [x] Sequence-gap detection during replay.
+- [x] Resume UI by durable session id.
+- [x] Export interview event stream with the finalized Blueprint.
+
+## v0.5 — conformance and pull-request delivery implemented
+
+- [x] Deterministic repository review policy extracted from the GitHub transport.
+- [x] Unit coverage for added/modified/unchanged blob classification.
+- [x] Unit coverage for stable review tokens independent from iteration order.
+- [x] Explicit stale-workspace, stale-base, stale-target and target-appeared-after-review tests.
+- [x] Golden Blueprint fixture spanning Domain Action, fixed Ok/Error, self-healing, identity graph, 2flow and Agda stub generation.
+- [x] Golden tree comparison so structural drift breaks CI.
+- [x] Real MCP stdio conformance test that lists tools, initializes a session, upserts a Domain Action and verifies the governed materialized tree.
+- [x] Optional `manual` or `after_publish` Pull Request delivery policy.
+- [x] Optional draft Pull Request policy.
+- [x] Manual Pull Request creation as a separate MCP/API operation after branch publication.
+- [x] Auto Pull Request creation after successful non-empty reviewed publication when configured.
+- [x] Refuse PR creation if the published target branch moved after publication.
+- [x] Reuse an existing open head/base Pull Request instead of creating duplicates.
+- [x] Preserve successful branch publication even if automatic PR creation fails; expose the PR delivery error separately.
+
 ## Next slices
 
-1. Add explicit relationship/identity graph artifacts and canonical-characteristic validation.
-2. Add 2flow AST generation and visualization from captured flows.
-3. Add formal proof-obligation artifacts and Agda stubs only for invariants eligible for formalization.
-4. Add Event Sourcing for interview state itself and resume sessions by durable session id.
-5. Add authentication and multi-tenant workspace isolation before hosted use.
-6. Add unit/integration/MCP conformance tests and golden Blueprint fixtures, including repository review staleness and Blueprint pin integrity cases.
-7. Add automatic pull-request creation after branch publication as an optional policy distinct from direct branch materialization.
-8. Add GitHub Actions validation against canonical AllasCode runtime/schema interfaces when those interfaces stabilize.
+1. Add authentication and multi-tenant workspace isolation before hosted use. This must be based on an explicit identity/tenant model rather than an arbitrary provider choice.
+2. Add canonical runtime/schema interface validation once those AllasCode interfaces are versioned and stable enough to pin like the Blueprint source.
+3. Add hosted deployment hardening: quotas, workspace lifecycle/retention, secret isolation, audit events and rate limits.
+4. Expand repository conformance with a disposable GitHub test repository in CI when a safe scoped test credential is available.
+5. Add optional generated-code phase only after semantic acceptance, keeping generated implementation separate from the semantic source of truth.
