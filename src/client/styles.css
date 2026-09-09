@@ -5,11 +5,15 @@ button, input, textarea { font: inherit; }
 button, .link { border: 0; border-radius: 10px; padding: 12px 16px; background: #eaf1ff; color: #07101d; font-weight: 700; cursor: pointer; text-decoration: none; text-align: center; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .landing { min-height: 100vh; display: grid; place-items: center; padding: 32px; }
-.hero { width: min(900px, 100%); }
+.hero { width: min(980px, 100%); }
 .eyebrow, .section-title, .role { color: #7d91ae; font-size: 11px; letter-spacing: .16em; font-weight: 800; }
 .hero h1 { font-size: clamp(48px, 8vw, 92px); line-height: .92; letter-spacing: -.055em; margin: 18px 0 24px; max-width: 820px; }
-.hero > p { color: #98a7bb; max-width: 720px; font-size: 18px; line-height: 1.6; }
-.start-card { margin-top: 42px; display: grid; gap: 18px; max-width: 720px; padding: 24px; border: 1px solid #1f2a3a; border-radius: 18px; background: rgba(13, 18, 26, .82); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+.hero > p { color: #98a7bb; max-width: 760px; font-size: 18px; line-height: 1.6; }
+.landing-actions { margin-top: 42px; display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 18px; align-items: start; }
+.start-card, .resume-card { display: grid; gap: 18px; padding: 24px; border: 1px solid #1f2a3a; border-radius: 18px; background: rgba(13, 18, 26, .82); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+.resume-card { background: rgba(9, 13, 19, .86); }
+.card-title { display: grid; gap: 5px; padding-bottom: 4px; }.card-title b { font-size: 15px; }.card-title span { color: #76889f; font-size: 12px; line-height: 1.45; }
+.landing-error { margin-top: 14px; max-width: 720px; }
 label { display: grid; gap: 8px; color: #aebbd0; font-size: 13px; font-weight: 650; }
 input, textarea { width: 100%; border: 1px solid #263449; background: #090d13; color: #eef4ff; border-radius: 10px; padding: 12px 14px; outline: none; resize: vertical; }
 input:focus, textarea:focus { border-color: #6889b8; box-shadow: 0 0 0 3px rgba(104,137,184,.14); }
@@ -20,6 +24,7 @@ input:focus, textarea:focus { border-color: #6889b8; box-shadow: 0 0 0 3px rgba(
 .inspector { border-width: 0 0 0 1px; display: flex; flex-direction: column; gap: 28px; }
 .sidebar h2 { margin: 10px 0 4px; font-size: 22px; }
 .sidebar p, .muted { color: #77889f; font-size: 13px; line-height: 1.5; }
+.session-id { display: block; margin-top: 11px; color: #61738b; font: 9px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .phase, .artifacts { display: grid; gap: 8px; font-size: 12px; color: #788aa2; }
 .phase strong, .artifacts strong { color: #e4ecf8; font-size: 14px; }
 .bar { height: 5px; background: #182230; border-radius: 99px; overflow: hidden; margin-top: 5px; }.bar i { display: block; height: 100%; background: #a9c8f3; }
@@ -39,5 +44,5 @@ input:focus, textarea:focus { border-color: #6889b8; box-shadow: 0 0 0 3px rgba(
 .review-counts { display: flex; gap: 8px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }.review-counts span { background: #141d29; border: 1px solid #243247; border-radius: 6px; padding: 4px 6px; }
 .diff-list { max-height: 240px; overflow: auto; display: grid; gap: 3px; border-top: 1px solid #17202d; border-bottom: 1px solid #17202d; padding: 7px 0; }.diff-file { min-width: 0; display: grid; grid-template-columns: 14px 1fr; gap: 5px; align-items: start; color: #8394aa; font-size: 10px; }.diff-file span { font-weight: 900; }.diff-file.added span { color: #88d6a3; }.diff-file.modified span { color: #e0bf77; }.diff-file code { white-space: normal; word-break: break-all; }
 .published { border: 1px solid #28563c; background: rgba(34, 109, 68, .12); border-radius: 8px; padding: 9px; color: #a9d9b7; font-size: 11px; }
-@media (max-width: 1050px) { .shell { grid-template-columns: 220px 1fr; }.inspector { display: none; } }
-@media (max-width: 720px) { .shell { grid-template-columns: 1fr; height: auto; min-height: 100vh; }.sidebar { display: none; }.chat-panel { min-height: 100vh; }.messages, .composer { padding-left: 16px; padding-right: 16px; }.composer { grid-template-columns: 1fr; } }
+@media (max-width: 1050px) { .shell { grid-template-columns: 220px 1fr; }.inspector { display: none; }.landing-actions { grid-template-columns: 1fr; max-width: 720px; } }
+@media (max-width: 720px) { .shell { grid-template-columns: 1fr; height: auto; min-height: 100vh; }.sidebar { display: none; }.chat-panel { min-height: 100vh; }.messages, .composer { padding-left: 16px; padding-right: 16px; }.composer { grid-template-columns: 1fr; }.landing { padding: 20px; }.landing-actions { margin-top: 28px; } }
