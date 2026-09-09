@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ForgeState, SemanticArtifact, SessionSnapshot, ValidationFinding } from '../shared/types.js';
 import { getProjectDirectory } from '../mcp/project.js';
+import { assertRuntimeTopology, workspaceBackend } from '../infra/runtime-services.js';
 import { authenticationMiddleware, principalFromResponse } from './auth.js';
 import {
   auditMiddleware,
@@ -17,6 +18,8 @@ import { interviewPhases, nextQuestion, phaseFor } from './interview.js';
 import { ForgerMcpClient } from './mcp-client.js';
 import { analyzeTurn } from './model.js';
 
+assertRuntimeTopology();
+const runtimeWorkspace = workspaceBackend();
 const app = express();
 const mcp = new ForgerMcpClient();
 const port = Number(process.env.PORT ?? 8787);
@@ -73,7 +76,17 @@ async function sessionSnapshot(sessionId: string, tenant: string): Promise<Sessi
   };
 }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'semantic-as-code-forger', version: '0.6.0' }));
+app.get('/api/health', (_req, res) => res.json({
+  ok: true,
+  service: 'semantic-as-code-forger',
+  version: '0.7.0',
+  topology: {
+    instances: Number(process.env.FORGER_INSTANCE_COUNT ?? 1),
+    workspace: runtimeWorkspace.kind,
+    rateLimit: process.env.FORGER_RATE_LIMIT_BACKEND?.trim() || 'memory',
+    audit: process.env.FORGER_AUDIT_BACKEND?.trim() || 'file'
+  }
+}));
 app.use('/api', (req, res, next) => void authenticationMiddleware(req, res, next));
 app.use('/api', tenantRateLimitMiddleware);
 
