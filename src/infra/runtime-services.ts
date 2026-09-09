@@ -77,6 +77,7 @@ export class HttpControlPlaneBackend implements RateLimitBackend, AuditBackend {
     this.token = options.token ?? env('FORGER_CONTROL_PLANE_TOKEN');
     this.timeoutMs = options.timeoutMs ?? Number(env('FORGER_CONTROL_PLANE_TIMEOUT_MS', '3000'));
     if (!this.baseUrl) throw new Error('FORGER_CONTROL_PLANE_URL is required for http control-plane backends');
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) throw new Error('FORGER_CONTROL_PLANE_TIMEOUT_MS must be a positive integer');
   }
 
   private async request(path: string, body: unknown): Promise<Response> {
@@ -138,11 +139,18 @@ export function auditBackend(): AuditBackend {
 export function assertRuntimeTopology(): void {
   const instances = Number(env('FORGER_INSTANCE_COUNT', '1'));
   if (!Number.isSafeInteger(instances) || instances < 1) throw new Error('FORGER_INSTANCE_COUNT must be a positive integer');
-  if (instances === 1) return;
 
   const workspace = workspaceBackend();
   const rate = env('FORGER_RATE_LIMIT_BACKEND', 'memory');
   const audit = env('FORGER_AUDIT_BACKEND', 'file');
+  if (!['memory', 'http'].includes(rate)) throw new Error(`Unsupported FORGER_RATE_LIMIT_BACKEND: ${rate}`);
+  if (!['file', 'http'].includes(audit)) throw new Error(`Unsupported FORGER_AUDIT_BACKEND: ${audit}`);
+  if ((rate === 'http' || audit === 'http') && !env('FORGER_CONTROL_PLANE_URL')) {
+    throw new Error('FORGER_CONTROL_PLANE_URL is required when a distributed HTTP backend is enabled');
+  }
+  if (rate === 'http' || audit === 'http') new HttpControlPlaneBackend();
+
+  if (instances === 1) return;
   const errors: string[] = [];
   if (!workspace.supportsMultiInstance) errors.push('FORGER_WORKSPACE_BACKEND=shared-posix');
   if (rate !== 'http') errors.push('FORGER_RATE_LIMIT_BACKEND=http');
