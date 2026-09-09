@@ -43,12 +43,16 @@ export interface ValidationFinding {
   artifact?: string;
 }
 
+export type PullRequestPolicy = 'manual' | 'after_publish';
+
 export interface RepositoryTarget {
   provider: 'github';
   repository: string;
   baseBranch: string;
   targetBranch: string;
   pathPrefix: string;
+  pullRequestPolicy: PullRequestPolicy;
+  pullRequestDraft: boolean;
   configuredAt: string;
 }
 
@@ -76,9 +80,23 @@ export interface RepositoryReview {
   commitSha?: string;
 }
 
+export interface RepositoryPullRequest {
+  number: number;
+  url: string;
+  state: 'open' | 'closed';
+  title: string;
+  baseBranch: string;
+  headBranch: string;
+  draft: boolean;
+  createdAt: string;
+  reusedExisting: boolean;
+}
+
 export interface RepositoryState {
   target?: RepositoryTarget;
   review?: RepositoryReview;
+  pullRequest?: RepositoryPullRequest;
+  pullRequestError?: string;
 }
 
 export interface ForgeState {
