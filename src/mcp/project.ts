@@ -3,6 +3,7 @@ import { resolve, join, dirname } from 'node:path';
 import YAML from 'yaml';
 import type { ForgeState, SemanticArtifact, ValidationFinding } from '../shared/types.js';
 import { materializeBehaviorFromPinnedBlueprint, semanticDocument, writeBlueprintProvenance } from './blueprint-source.js';
+import { materializeIdentityGraph, validateIdentityGraph } from './identity.js';
 
 const root = resolve(process.env.FORGER_WORKSPACE_ROOT ?? '.forger-workspaces');
 
@@ -86,7 +87,9 @@ export async function initializeSession(input: { sessionId: string; projectName:
       result_events_configurable: blueprint.compatibility.terminalEventsConfigurable,
       legacy_terminal_aliases_allowed: blueprint.compatibility.legacyTerminalAliasesAllowed,
       self_healing_required: blueprint.compatibility.selfHealingRequired,
-      intent_immutable: blueprint.compatibility.intentImmutable
+      intent_immutable: blueprint.compatibility.intentImmutable,
+      semantic_identity_graph: true,
+      cross_entity_identity: true
     },
     generation: {
       preserve_unknowns: blueprint.compatibility.preserveUnknowns,
@@ -98,6 +101,7 @@ export async function initializeSession(input: { sessionId: string; projectName:
     join(directory, 'README.md'),
     `# ${state.projectName}\n\n${state.summary || 'AllasCode project forged from a semantic interview.'}\n\n> Generated incrementally by Semantic-as-Code Forger against pinned AllasCode-Blueprint \`${blueprint.commit}\`.\n`
   );
+  await materializeIdentityGraph(directory, state);
   await saveState(state);
   return state;
 }
@@ -121,6 +125,8 @@ function artifactPath(artifact: SemanticArtifact): string {
     case 'constraint': return `constraints/${label}.yml`;
     case 'capability': return `capabilities/${label}.yml`;
     case 'infrastructure': return `infra/${label}.yml`;
+    case 'relationship': return `identity/relationships/${label}.yml`;
+    case 'identity_rule': return `identity/rules/${label}.yml`;
     case 'architecture_decision': return `architecture/decisions/current/${label}.md`;
   }
 }
@@ -148,6 +154,9 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
   }
   if (normalized.kind === 'atomic_behavior' || normalized.kind === 'domain_action') {
     await materializeBehaviorFromPinnedBlueprint(absolutePath, normalized);
+  }
+  if (normalized.kind === 'entity' || normalized.kind === 'property' || normalized.kind === 'relationship' || normalized.kind === 'identity_rule') {
+    await materializeIdentityGraph(projectDir(sessionId), state);
   }
 
   await saveState(state);
@@ -184,6 +193,7 @@ export function validateState(state: ForgeState): ValidationFinding[] {
       }
     }
   }
+  findings.push(...validateIdentityGraph(state));
   return findings;
 }
 
@@ -210,6 +220,7 @@ export async function finalize(sessionId: string): Promise<{ state: ForgeState; 
   const errors = validation.filter((x) => x.severity === 'error');
   if (errors.length) throw new Error(`Cannot finalize: ${errors.map((x) => x.code).join(', ')}`);
   state.finalizedAt = new Date().toISOString();
+  await materializeIdentityGraph(projectDir(sessionId), state);
   await writeText(join(projectDir(sessionId), 'PROJECT_SUMMARY.md'), `# ${state.projectName} — Semantic Blueprint\n\n${state.summary}\n\n## Facts captured\n${state.facts.map((x) => `- ${x}`).join('\n')}\n\n## Artifacts\n${state.artifacts.map((x) => `- **${x.kind}** \`${x.canonicalLabel}\` — ${x.summary}`).join('\n')}\n`);
   await writeText(join(projectDir(sessionId), 'docs/INTERVIEW_TRACE.md'), `# Interview trace\n\n${state.turns.map((turn) => `## ${turn.role}\n\n${turn.content}`).join('\n\n')}\n`);
   await writeText(join(projectDir(sessionId), '.allascode/forge-state.json'), JSON.stringify(state, null, 2));
