@@ -24,7 +24,7 @@ test('same tenant/session permits only one active mutating operation', async () 
   try {
     await runWithTenant('tenant-a', async () => {
       const first = withSessionMutationLease('session-a', async () => {
-        entered.resolve();
+        entered.resolve(undefined);
         await release.promise;
         return currentSessionFencingToken();
       });
@@ -35,7 +35,7 @@ test('same tenant/session permits only one active mutating operation', async () 
         /Session mutation lease busy/
       );
 
-      release.resolve();
+      release.resolve(undefined);
       assert.equal(await first, 1);
     });
   } finally {
@@ -77,7 +77,7 @@ test('different sessions do not block each other', async () => {
         return currentSessionFencingToken();
       });
       const second = await withSessionMutationLease('session-b', async () => currentSessionFencingToken());
-      gate.resolve();
+      gate.resolve(undefined);
       assert.equal(await first, 1);
       assert.equal(second, 1);
     });
