@@ -5,6 +5,7 @@ import type { ForgeState, SemanticArtifact, ValidationFinding } from '../shared/
 import { materializeBehaviorFromPinnedBlueprint, semanticDocument, writeBlueprintProvenance } from './blueprint-source.js';
 import { materializeFormalization, validateFormalization } from './formalization.js';
 import { materializeIdentityGraph, validateIdentityGraph } from './identity.js';
+import { assertArtifactQuota, assertSessionInput, assertTurnQuota } from './quotas.js';
 import { writeRuntimeConformance } from './runtime-source.js';
 import { appendInterviewEvent, exportInterviewEventLog, initializeInterviewEventLog, replayInterviewState } from './session-events.js';
 import { currentTenantId, tenantWorkspaceRoot } from './tenant-context.js';
@@ -73,6 +74,7 @@ export async function saveState(state: ForgeState): Promise<void> {
 }
 
 export async function initializeSession(input: { sessionId: string; projectName: string; summary: string }): Promise<ForgeState> {
+  assertSessionInput(input.projectName, input.summary);
   const projectSlug = safeSegment(input.projectName.toLowerCase());
   const now = new Date().toISOString();
   const state: ForgeState = {
@@ -173,6 +175,7 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
     data: artifact.data ?? {}
   };
   if (!normalized.canonicalLabel) throw new Error('canonicalLabel is required');
+  assertArtifactQuota(state, normalized);
 
   const index = state.artifacts.findIndex((a) => a.kind === normalized.kind && a.canonicalLabel === normalized.canonicalLabel);
   if (index >= 0) state.artifacts[index] = normalized;
@@ -197,6 +200,7 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
 
 export async function recordTurn(input: { sessionId: string; userMessage: string; assistantMessage: string; facts: string[]; phaseComplete: boolean }): Promise<ForgeState> {
   const state = await readState(input.sessionId);
+  assertTurnQuota(state, input);
   const event = await appendInterviewEvent(sessionDir(input.sessionId), {
     type: 'TurnRecorded',
     data: {
