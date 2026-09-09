@@ -1,16 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
 import type express from 'express';
 import type { AuthPrincipal } from './auth.js';
-
-interface WindowEntry {
-  windowStart: number;
-  count: number;
-}
-
-const windows = new Map<string, WindowEntry>();
-const workspaceRoot = resolve(process.env.FORGER_WORKSPACE_ROOT ?? '.forger-workspaces');
+import { auditBackend, rateLimitBackend, resetRuntimeServiceStateForTests } from '../infra/runtime-services.js';
 
 function positiveInteger(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
@@ -53,40 +44,31 @@ export function tenantRateLimitMiddleware(_req: express.Request, res: express.Re
 
   const identity = principal(res);
   if (!identity) { next(); return; }
-  const key = opaqueHash(identity.tenantId);
-  const now = Date.now();
-  const minute = 60_000;
-  const current = windows.get(key);
-  const entry = !current || now - current.windowStart >= minute ? { windowStart: now, count: 0 } : current;
-  entry.count += 1;
-  windows.set(key, entry);
+  const scope = `tenant:${identity.tenantId}`;
+  const backend = rateLimitBackend();
 
-  const remaining = Math.max(0, limit - entry.count);
-  res.setHeader('x-ratelimit-limit', String(limit));
-  res.setHeader('x-ratelimit-remaining', String(remaining));
-  res.setHeader('x-ratelimit-reset', String(Math.ceil((entry.windowStart + minute) / 1000)));
-
-  if (entry.count > limit) {
-    res.setHeader('retry-after', String(Math.max(1, Math.ceil((entry.windowStart + minute - now) / 1000))));
-    res.status(429).json({ error: 'Tenant request rate limit exceeded', requestId: res.locals.requestId });
-    return;
-  }
-  next();
-}
-
-async function writeAuditRecord(record: Record<string, unknown>): Promise<void> {
-  if ((process.env.FORGER_AUDIT_ENABLED ?? 'true') !== 'true') return;
-  const date = new Date().toISOString().slice(0, 10);
-  const path = resolve(workspaceRoot, '_audit', `${date}.ndjson`);
-  await mkdir(dirname(path), { recursive: true });
-  await appendFile(path, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600 });
+  void backend.consume(scope, limit, 60_000).then((decision) => {
+    res.setHeader('x-ratelimit-limit', String(limit));
+    res.setHeader('x-ratelimit-remaining', String(decision.remaining));
+    res.setHeader('x-ratelimit-reset', String(Math.ceil(decision.resetAt / 1000)));
+    if (!decision.allowed) {
+      res.setHeader('retry-after', String(Math.max(1, Math.ceil((decision.resetAt - Date.now()) / 1000))));
+      res.status(429).json({ error: 'Tenant request rate limit exceeded', requestId: res.locals.requestId });
+      return;
+    }
+    next();
+  }).catch((error) => {
+    console.error('[rate-limit]', error);
+    res.status(503).json({ error: 'Rate-limit service unavailable', requestId: res.locals.requestId });
+  });
 }
 
 export function auditMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const started = Date.now();
   res.once('finish', () => {
+    if ((process.env.FORGER_AUDIT_ENABLED ?? 'true') !== 'true') return;
     const identity = principal(res);
-    void writeAuditRecord({
+    const record = {
       at: new Date().toISOString(),
       request_id: res.locals.requestId,
       method: req.method,
@@ -95,7 +77,8 @@ export function auditMiddleware(req: express.Request, res: express.Response, nex
       duration_ms: Date.now() - started,
       tenant_hash: identity ? opaqueHash(identity.tenantId) : null,
       subject_hash: identity ? opaqueHash(`${identity.issuer}\0${identity.subject}`) : null
-    }).catch((error) => console.error('[audit]', error));
+    };
+    void auditBackend().append(record).catch((error) => console.error('[audit]', error));
   });
   next();
 }
@@ -108,5 +91,5 @@ export function configureServerTimeouts(server: import('node:http').Server): voi
 }
 
 export function resetRateLimitStateForTests(): void {
-  windows.clear();
+  resetRuntimeServiceStateForTests();
 }
