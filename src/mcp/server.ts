@@ -3,9 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { artifactKinds, type SemanticArtifact } from '../shared/types.js';
 import { finalize, initializeSession, recordTurn, snapshot, upsertArtifact } from './project.js';
-import { publishRepository, reviewRepository, setRepositoryTarget } from './github.js';
+import { createRepositoryPullRequest, publishRepository, reviewRepository, setRepositoryTarget } from './github.js';
 
-const server = new Server({ name: 'semantic-as-code-forger-mcp', version: '0.2.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'semantic-as-code-forger-mcp', version: '0.5.0' }, { capabilities: { tools: {} } });
 
 const tools = [
   {
@@ -57,12 +57,14 @@ const tools = [
   },
   {
     name: 'forger_repository_target_set',
-    description: 'Configure the GitHub repository, base branch, review branch and optional destination path for a finalized Blueprint.',
+    description: 'Configure the GitHub repository, base branch, review branch, optional path prefix and optional pull-request-after-publish policy.',
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['sessionId', 'repository'],
       properties: {
         sessionId: { type: 'string' }, repository: { type: 'string', description: 'owner/name' },
-        baseBranch: { type: 'string' }, targetBranch: { type: 'string' }, pathPrefix: { type: 'string' }
+        baseBranch: { type: 'string' }, targetBranch: { type: 'string' }, pathPrefix: { type: 'string' },
+        pullRequestPolicy: { type: 'string', enum: ['manual', 'after_publish'] },
+        pullRequestDraft: { type: 'boolean' }
       }
     }
   },
@@ -73,10 +75,20 @@ const tools = [
   },
   {
     name: 'forger_repository_publish',
-    description: 'Publish exactly the reviewed Blueprint diff to GitHub. Requires the latest review token and rejects stale branch/workspace state.',
+    description: 'Publish exactly the reviewed Blueprint diff to GitHub. Requires the latest review token and rejects stale branch/workspace state. Can auto-open a PR when the configured policy is after_publish.',
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['sessionId', 'reviewToken'],
       properties: { sessionId: { type: 'string' }, reviewToken: { type: 'string' } }
+    }
+  },
+  {
+    name: 'forger_repository_pull_request_create',
+    description: 'Open or reuse an existing pull request for the already-published reviewed branch. This is separate from branch publication and is idempotent for the same open head/base pair.',
+    inputSchema: {
+      type: 'object', additionalProperties: false, required: ['sessionId'],
+      properties: {
+        sessionId: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' }, draft: { type: 'boolean' }
+      }
     }
   }
 ];
@@ -108,7 +120,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         repository: String(args.repository ?? ''),
         baseBranch: typeof args.baseBranch === 'string' ? args.baseBranch : undefined,
         targetBranch: typeof args.targetBranch === 'string' ? args.targetBranch : undefined,
-        pathPrefix: typeof args.pathPrefix === 'string' ? args.pathPrefix : undefined
+        pathPrefix: typeof args.pathPrefix === 'string' ? args.pathPrefix : undefined,
+        pullRequestPolicy: typeof args.pullRequestPolicy === 'string' ? args.pullRequestPolicy : undefined,
+        pullRequestDraft: args.pullRequestDraft === true
       });
       break;
     case 'forger_repository_review':
@@ -116,6 +130,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       break;
     case 'forger_repository_publish':
       value = await publishRepository(String(args.sessionId), String(args.reviewToken ?? ''));
+      break;
+    case 'forger_repository_pull_request_create':
+      value = await createRepositoryPullRequest(String(args.sessionId), {
+        title: typeof args.title === 'string' ? args.title : undefined,
+        body: typeof args.body === 'string' ? args.body : undefined,
+        draft: typeof args.draft === 'boolean' ? args.draft : undefined
+      });
       break;
     default:
       throw new Error(`Unknown tool: ${name}`);
