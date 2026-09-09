@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "kind": "allascode-model",
+  "model": { "canonical_label": "Invalid.Embedded", "semantics_path": "semantics" },
+  "framework": { "relationship": "depends-on-allascode", "embedded": true },
+  "repository": { "independent": true, "boundary_invariants": ["model-depends-on-framework"] },
+  "conformance": { "canonical_source": "semantics" }
+}
