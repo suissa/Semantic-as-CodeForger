@@ -1,6 +1,6 @@
 {
   "name": "semantic-as-code-forger",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,8 @@
     "dev:web": "vite",
     "dev:server": "tsx watch src/server/index.ts",
     "mcp": "tsx src/mcp/server.ts",
+    "blueprint:verify": "tsx src/cli/blueprint-source.ts verify",
+    "blueprint:sync": "tsx src/cli/blueprint-source.ts sync",
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server/index.ts",
     "typecheck": "tsc --noEmit"
