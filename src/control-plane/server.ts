@@ -186,6 +186,12 @@ async function appendAudit(record: Record<string, unknown>): Promise<void> {
   await appendFile(path, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600 });
 }
 
+export function resetControlPlaneStateForTests(): void {
+  windows.clear();
+  leases.clear();
+  leaseLoads.clear();
+}
+
 export function createControlPlaneServer() {
   return createServer(async (req, res) => {
     try {
