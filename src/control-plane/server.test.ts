@@ -31,9 +31,11 @@ test('reference control plane centralizes rate limiting, durable fencing and aud
   const previousToken = process.env.FORGER_CONTROL_PLANE_TOKEN;
   const previousAuditRoot = process.env.FORGER_CONTROL_AUDIT_ROOT;
   const previousLeaseRoot = process.env.FORGER_CONTROL_LEASE_ROOT;
+  const previousNodeEnv = process.env.NODE_ENV;
   process.env.FORGER_CONTROL_PLANE_TOKEN = 'test-control-secret';
   process.env.FORGER_CONTROL_AUDIT_ROOT = join(directory, 'audit');
   process.env.FORGER_CONTROL_LEASE_ROOT = join(directory, 'leases');
+  process.env.NODE_ENV = 'test';
 
   const { createControlPlaneServer, resetControlPlaneStateForTests } = await import('./server.js');
   resetControlPlaneStateForTests();
@@ -111,6 +113,8 @@ test('reference control plane centralizes rate limiting, durable fencing and aud
     else process.env.FORGER_CONTROL_AUDIT_ROOT = previousAuditRoot;
     if (previousLeaseRoot === undefined) delete process.env.FORGER_CONTROL_LEASE_ROOT;
     else process.env.FORGER_CONTROL_LEASE_ROOT = previousLeaseRoot;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
     await rm(directory, { recursive: true, force: true });
   }
 });
