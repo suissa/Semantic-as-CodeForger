@@ -13,6 +13,8 @@ export const artifactKinds = [
   'constraint',
   'capability',
   'infrastructure',
+  'relationship',
+  'identity_rule',
   'architecture_decision'
 ] as const;
 
