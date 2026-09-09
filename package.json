@@ -10,6 +10,7 @@
     "mcp": "tsx src/mcp/server.ts",
     "blueprint:verify": "tsx src/cli/blueprint-source.ts verify",
     "blueprint:sync": "tsx src/cli/blueprint-source.ts sync",
+    "runtime:verify": "tsx src/cli/runtime-source.ts verify",
     "test": "tsx --test src/mcp/*.test.ts src/server/*.test.ts",
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server/index.ts",
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
+    "ajv": "^8.20.0",
     "archiver": "^7.0.1",
     "express": "^5.1.0",
     "jose": "^6.2.12",
