@@ -15,5 +15,6 @@ jobs:
           node-version: 24
       - run: npm install
       - run: npm run blueprint:verify
+      - run: npm run runtime:verify
       - run: npm test
       - run: npm run build
