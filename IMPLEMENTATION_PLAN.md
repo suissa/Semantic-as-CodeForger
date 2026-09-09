@@ -109,21 +109,38 @@ Build a TypeScript fullstack Semantic-as-Code Forger that interviews a user abou
 - [x] `local-fs|shared-posix` workspace topology with explicit multi-instance capability declaration.
 - [x] `memory|http` rate-limit backend selection.
 - [x] `file|http` audit backend selection.
-- [x] Fail-fast startup policy: `FORGER_INSTANCE_COUNT>1` refuses node-local workspace/rate-limit/audit combinations.
+- [x] Fail-fast startup policy for unsafe multi-instance workspace/rate-limit/audit combinations.
 - [x] Central HTTP control-plane client with bounded request timeout and optional bearer authentication.
 - [x] Reference `npm run control-plane` service implementing shared fixed-window rate limiting and append-only audit ingestion.
 - [x] Raw tenant identifiers never leave the application instance for rate limiting; only opaque SHA-256 scopes are sent to the control plane.
 - [x] Horizontal topology exposed in `/api/health` without exposing credentials or tenant identifiers.
-- [x] Runtime-service conformance tests for fixed-window semantics and valid/invalid multi-instance configurations.
-- [x] HTTP adapter conformance proving shared rate decisions and audit forwarding.
-- [x] Reference control-plane end-to-end test proving bearer auth, shared policy state and audit persistence.
+- [x] Runtime-service and HTTP control-plane conformance tests.
 - [x] No Redis/S3/Postgres dependency is required by the Forger; distributed infrastructure can replace the reference control plane behind the same contract.
+
+## v0.8 — session lease and fencing implemented
+
+- [x] Provider-neutral `SessionLeaseBackend` contract with acquire, renew, validate and release operations.
+- [x] In-process lease backend for single-node/local development.
+- [x] HTTP lease backend through the same control-plane boundary used by horizontal deployments.
+- [x] Lease scope derived from an opaque SHA-256 hash of tenant + session identity.
+- [x] Unique holder per mutating MCP operation; read-only snapshot calls remain lock-free.
+- [x] Every mutating MCP tool is serialized by tenant/session lease ownership.
+- [x] Monotonically increasing fencing token issued on each new ownership epoch.
+- [x] Renewal heartbeat for long-running mutations.
+- [x] Durable state/Event-Sourcing checkpoints validate that the operation still owns its exact fencing token.
+- [x] Stale holders cannot renew, validate or release a newer holder's lease.
+- [x] Reference control plane persists `highestFencingToken` per session scope so fencing survives coordinator restart.
+- [x] Takeover after expiry receives a strictly larger fencing token.
+- [x] Multi-instance startup now also requires `FORGER_SESSION_LEASE_BACKEND=http`.
+- [x] Lease busy/lost/stale-fence errors map to HTTP `409 Conflict`.
+- [x] `/api/health` exposes the non-secret session lease backend.
+- [x] Tests cover concurrent writer exclusion, sequential fencing monotonicity, independent sessions, takeover after expiry and restart-persistent fencing.
 
 ## Next slices
 
 1. Add a production-grade distributed control-plane adapter (for example Redis/NATS/Postgres) only when deployment chooses one; the Forger-side HTTP contract remains stable.
-2. Add fencing/leases around mutable session operations if the same session may be processed concurrently by multiple app instances; shared storage alone does not serialize writers.
-3. Add audit-log rotation/export/signing policy if compliance-grade operational evidence is required.
-4. Expand repository conformance with a disposable GitHub test repository in CI when a safe scoped cross-repository test credential is available.
-5. Add a first-party browser OIDC login/session flow only if the hosted product should not rely on a trusted same-origin identity proxy.
-6. Add optional generated-code phase only after semantic acceptance, keeping generated implementation separate from the semantic source of truth.
+2. Add audit-log rotation/export/signing policy if compliance-grade operational evidence is required.
+3. Expand repository conformance with a disposable GitHub test repository in CI when a safe scoped cross-repository test credential is available.
+4. Add a first-party browser OIDC login/session flow only if the hosted product should not rely on a trusted same-origin identity proxy.
+5. Add optional generated-code phase only after semantic acceptance, keeping generated implementation separate from the semantic source of truth.
+6. If the reference control plane itself needs HA, implement the same lease contract over a linearizable durable backend rather than replicating the singleton reference coordinator independently.
