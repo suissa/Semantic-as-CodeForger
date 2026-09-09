@@ -1,0 +1,110 @@
+{
+  "action": {
+    "kind": "domain_action",
+    "canonicalLabel": "OrderAgent.PlaceOrder",
+    "summary": "Establish a valid order after checkout is requested.",
+    "data": {
+      "intent": "PlaceOrder",
+      "listenEvent": "Checkout.Requested",
+      "input": { "order": "Order" },
+      "output": { "order": "Order" },
+      "invariants": ["The same checkout request cannot establish two orders."],
+      "forbidden": ["Emit success/failure as configurable terminal events."],
+      "resultEvents": ["success", "failure"]
+    }
+  },
+  "identityArtifacts": [
+    {
+      "kind": "entity",
+      "canonicalLabel": "Order",
+      "summary": "Commercial order.",
+      "data": { "identity": "semantic before storage" }
+    },
+    {
+      "kind": "entity",
+      "canonicalLabel": "Customer",
+      "summary": "Customer identity.",
+      "data": {}
+    },
+    {
+      "kind": "property",
+      "canonicalLabel": "Order.localId",
+      "summary": "Order-local identity characteristic.",
+      "data": { "entity": "Order", "canonicalCharacteristic": true }
+    },
+    {
+      "kind": "property",
+      "canonicalLabel": "Customer.identityKey",
+      "summary": "Canonical characteristic used by Order in this context.",
+      "data": { "entity": "Customer", "canonicalCharacteristic": true }
+    },
+    {
+      "kind": "relationship",
+      "canonicalLabel": "Order.absorbs.Customer",
+      "summary": "Customer completes Order behavior in checkout context.",
+      "data": {
+        "fromEntity": "Order",
+        "toEntity": "Customer",
+        "relation": "absorbs_identity",
+        "behaviorCompleting": true,
+        "canonicalCharacteristic": "Customer.identityKey",
+        "context": "Checkout"
+      }
+    },
+    {
+      "kind": "identity_rule",
+      "canonicalLabel": "Order.CheckoutIdentity",
+      "summary": "Order identity is contextually completed by Customer identity.",
+      "data": {
+        "entity": "Order",
+        "components": [
+          { "entity": "Order", "characteristic": "Order.localId" },
+          { "entity": "Customer", "characteristic": "Customer.identityKey" }
+        ],
+        "context": "Checkout",
+        "uniqueness": "contextual",
+        "behaviorCompleting": true
+      }
+    }
+  ],
+  "flow": {
+    "kind": "flow",
+    "canonicalLabel": "Checkout.Main",
+    "summary": "Checkout causal flow.",
+    "data": {
+      "twoFlow": "-> Checkout.Requested\n[->> OrderAgent.PlaceOrder, ->> PaymentAgent.Authorize]\nerror#last-error\n<- Checkout.Completed"
+    }
+  },
+  "proof": {
+    "kind": "proof_obligation",
+    "canonicalLabel": "OrderAgent.PlaceOrder.Idempotent",
+    "summary": "Repeated request cannot create a second semantic order.",
+    "data": {
+      "proposition": "Applying PlaceOrder twice to the same accepted checkout identity has the same semantic result as applying it once.",
+      "basisArtifact": "OrderAgent.PlaceOrder",
+      "proofKind": "idempotency",
+      "formalizable": true,
+      "status": "unproven"
+    }
+  },
+  "expectedTree": [
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/README.md",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/SKILL.md",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/config.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/events/Error.event.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/events/Ok.event.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/implementation/README.md",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/interface.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/manifest.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/schema/input.schema.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/schema/output.schema.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/specifications/forbidden.spec.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/specifications/invariants.spec.yml",
+    "atomicbehavior/actions/OrderAgent-PlaceOrder/specifications/self-healing.spec.yml",
+    "flows/Checkout-Main.ast.json",
+    "flows/Checkout-Main.mmd",
+    "formalization/agda/OrderAgentPlaceOrderIdempotent.agda",
+    "formalization/obligations/OrderAgent-PlaceOrder-Idempotent.yml",
+    "identity/graph.yml"
+  ]
+}
