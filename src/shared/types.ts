@@ -39,6 +39,44 @@ export interface ValidationFinding {
   artifact?: string;
 }
 
+export interface RepositoryTarget {
+  provider: 'github';
+  repository: string;
+  baseBranch: string;
+  targetBranch: string;
+  pathPrefix: string;
+  configuredAt: string;
+}
+
+export interface RepositoryReviewFile {
+  path: string;
+  status: 'added' | 'modified' | 'unchanged';
+  bytes: number;
+  sha: string;
+  remoteSha?: string;
+}
+
+export interface RepositoryReview {
+  token: string;
+  generatedAt: string;
+  baseSha: string;
+  baseTreeSha: string;
+  parentBranch: string;
+  files: RepositoryReviewFile[];
+  counts: {
+    added: number;
+    modified: number;
+    unchanged: number;
+  };
+  publishedAt?: string;
+  commitSha?: string;
+}
+
+export interface RepositoryState {
+  target?: RepositoryTarget;
+  review?: RepositoryReview;
+}
+
 export interface ForgeState {
   sessionId: string;
   projectName: string;
@@ -51,6 +89,7 @@ export interface ForgeState {
   createdAt: string;
   updatedAt: string;
   finalizedAt?: string;
+  repository?: RepositoryState;
 }
 
 export interface SessionSnapshot extends ForgeState {
