@@ -20,14 +20,27 @@ Build a TypeScript fullstack Semantic-as-Code Forger that interviews a user abou
 - [x] ZIP export.
 - [x] Complete backend agent skill.
 
+## v0.2 — repository delivery implemented
+
+- [x] GitHub repository target configuration (`owner/repo`, base branch, target branch and optional path prefix).
+- [x] Repository operations exposed only through MCP tools.
+- [x] Non-mutating diff review based on Git tree/blob SHAs.
+- [x] Review token bound to repository, destination, parent SHA and exact generated file hashes.
+- [x] Stale workspace detection between review and publish.
+- [x] Stale target/base branch detection between review and publish.
+- [x] Explicit UI approval gate before publication.
+- [x] Default isolated review branch `forger/<project>-<session>`.
+- [x] Preserve remote files not owned by the generated workspace; no implicit deletion.
+- [x] GitHub token kept server-side and outside generated Forge state.
+
 ## Next slices
 
-1. Add native repository target MCP tools so a finalized workspace can be committed to a chosen Git repository with review/diff gates.
-2. Synchronize schemas/templates from a pinned AllasCode-Blueprint version instead of keeping the minimal materializer embedded.
-3. Add explicit relationship/identity graph artifacts and canonical-characteristic validation.
-4. Add 2flow AST generation and visualization from captured flows.
-5. Add formal proof-obligation artifacts and Agda stubs only for invariants eligible for formalization.
-6. Add Event Sourcing for interview state itself and resume sessions by durable session id.
-7. Add authentication and multi-tenant workspace isolation before hosted use.
-8. Add unit/integration/MCP conformance tests and golden Blueprint fixtures.
+1. Synchronize schemas/templates from a pinned AllasCode-Blueprint version instead of keeping the minimal materializer embedded.
+2. Add explicit relationship/identity graph artifacts and canonical-characteristic validation.
+3. Add 2flow AST generation and visualization from captured flows.
+4. Add formal proof-obligation artifacts and Agda stubs only for invariants eligible for formalization.
+5. Add Event Sourcing for interview state itself and resume sessions by durable session id.
+6. Add authentication and multi-tenant workspace isolation before hosted use.
+7. Add unit/integration/MCP conformance tests and golden Blueprint fixtures, including repository review staleness cases.
+8. Add automatic pull-request creation after branch publication as an optional policy distinct from direct branch materialization.
 9. Add GitHub Actions validation against the canonical AllasCode schemas/runtime when those interfaces stabilize.
