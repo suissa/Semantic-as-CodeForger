@@ -3,6 +3,7 @@ import { resolve, join, dirname } from 'node:path';
 import YAML from 'yaml';
 import type { ForgeState, SemanticArtifact, ValidationFinding } from '../shared/types.js';
 import { materializeBehaviorFromPinnedBlueprint, semanticDocument, writeBlueprintProvenance } from './blueprint-source.js';
+import { materializeFormalization, validateFormalization } from './formalization.js';
 import { materializeIdentityGraph, validateIdentityGraph } from './identity.js';
 import { materializeTwoFlow, validateTwoFlow } from './twoflow.js';
 
@@ -91,7 +92,8 @@ export async function initializeSession(input: { sessionId: string; projectName:
       intent_immutable: blueprint.compatibility.intentImmutable,
       semantic_identity_graph: true,
       cross_entity_identity: true,
-      twoflow_ast: true
+      twoflow_ast: true,
+      formal_proof_claim_requires_evidence: true
     },
     generation: {
       preserve_unknowns: blueprint.compatibility.preserveUnknowns,
@@ -129,6 +131,8 @@ function artifactPath(artifact: SemanticArtifact): string {
     case 'infrastructure': return `infra/${label}.yml`;
     case 'relationship': return `identity/relationships/${label}.yml`;
     case 'identity_rule': return `identity/rules/${label}.yml`;
+    case 'proof_obligation': return `formalization/obligations/${label}.yml`;
+    case 'evidence': return `formalization/evidence/${label}.prov.yml`;
     case 'architecture_decision': return `architecture/decisions/current/${label}.md`;
   }
 }
@@ -160,9 +164,8 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
   if (normalized.kind === 'entity' || normalized.kind === 'property' || normalized.kind === 'relationship' || normalized.kind === 'identity_rule') {
     await materializeIdentityGraph(projectDir(sessionId), state);
   }
-  if (normalized.kind === 'flow') {
-    await materializeTwoFlow(projectDir(sessionId), normalized);
-  }
+  if (normalized.kind === 'flow') await materializeTwoFlow(projectDir(sessionId), normalized);
+  if (normalized.kind === 'proof_obligation' || normalized.kind === 'evidence') await materializeFormalization(projectDir(sessionId), normalized);
 
   await saveState(state);
   return normalized;
@@ -200,6 +203,7 @@ export function validateState(state: ForgeState): ValidationFinding[] {
     if (artifact.kind === 'flow') findings.push(...validateTwoFlow(artifact));
   }
   findings.push(...validateIdentityGraph(state));
+  findings.push(...validateFormalization(state));
   return findings;
 }
 
@@ -228,6 +232,7 @@ export async function finalize(sessionId: string): Promise<{ state: ForgeState; 
   state.finalizedAt = new Date().toISOString();
   await materializeIdentityGraph(projectDir(sessionId), state);
   for (const flow of state.artifacts.filter((artifact) => artifact.kind === 'flow')) await materializeTwoFlow(projectDir(sessionId), flow);
+  for (const artifact of state.artifacts.filter((item) => item.kind === 'proof_obligation' || item.kind === 'evidence')) await materializeFormalization(projectDir(sessionId), artifact);
   await writeText(join(projectDir(sessionId), 'PROJECT_SUMMARY.md'), `# ${state.projectName} — Semantic Blueprint\n\n${state.summary}\n\n## Facts captured\n${state.facts.map((x) => `- ${x}`).join('\n')}\n\n## Artifacts\n${state.artifacts.map((x) => `- **${x.kind}** \`${x.canonicalLabel}\` — ${x.summary}`).join('\n')}\n`);
   await writeText(join(projectDir(sessionId), 'docs/INTERVIEW_TRACE.md'), `# Interview trace\n\n${state.turns.map((turn) => `## ${turn.role}\n\n${turn.content}`).join('\n\n')}\n`);
   await writeText(join(projectDir(sessionId), '.allascode/forge-state.json'), JSON.stringify(state, null, 2));
