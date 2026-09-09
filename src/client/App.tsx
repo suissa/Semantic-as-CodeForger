@@ -18,6 +18,8 @@ export function App() {
   const [baseBranch, setBaseBranch] = useState('');
   const [targetBranch, setTargetBranch] = useState('');
   const [pathPrefix, setPathPrefix] = useState('');
+  const [autoPullRequest, setAutoPullRequest] = useState(false);
+  const [pullRequestDraft, setPullRequestDraft] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,6 +33,8 @@ export function App() {
       setBaseBranch(target.baseBranch);
       setTargetBranch(target.targetBranch);
       setPathPrefix(target.pathPrefix);
+      setAutoPullRequest(target.pullRequestPolicy === 'after_publish');
+      setPullRequestDraft(target.pullRequestDraft);
     }
   }
 
@@ -76,7 +80,14 @@ export function App() {
     try {
       hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/target`, {
         method: 'POST',
-        body: JSON.stringify({ repository, baseBranch, targetBranch, pathPrefix })
+        body: JSON.stringify({
+          repository,
+          baseBranch,
+          targetBranch,
+          pathPrefix,
+          pullRequestPolicy: autoPullRequest ? 'after_publish' : 'manual',
+          pullRequestDraft
+        })
       }));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -97,6 +108,17 @@ export function App() {
     try {
       hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/publish`, {
         method: 'POST', body: JSON.stringify({ reviewToken })
+      }));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+
+  async function createPullRequest() {
+    if (!session) return;
+    setBusy(true); setError('');
+    try {
+      hydrateSession(await api<SessionSnapshot>(`/api/sessions/${session.sessionId}/repository/pull-request`, {
+        method: 'POST', body: JSON.stringify({ draft: pullRequestDraft })
       }));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -128,6 +150,7 @@ export function App() {
 
   const repoTarget = session.repository?.target;
   const repoReview = session.repository?.review;
+  const repoPullRequest = session.repository?.pullRequest;
   const changedFiles = repoReview?.files.filter((file) => file.status !== 'unchanged') ?? [];
 
   return <main className="shell">
@@ -168,6 +191,8 @@ export function App() {
             <label>Branch de review<input value={targetBranch} onChange={(e) => setTargetBranch(e.target.value)} placeholder="forger/..." /></label>
           </div>
           <label>Path opcional<input value={pathPrefix} onChange={(e) => setPathPrefix(e.target.value)} placeholder="Blueprint" /></label>
+          <label className="check-row"><input type="checkbox" checked={autoPullRequest} onChange={(e) => setAutoPullRequest(e.target.checked)} /><span>Criar Pull Request automaticamente após publicar a branch revisada</span></label>
+          <label className="check-row"><input type="checkbox" checked={pullRequestDraft} onChange={(e) => setPullRequestDraft(e.target.checked)} /><span>Criar Pull Request como draft</span></label>
           <button className="secondary" disabled={busy || !repository.trim()}>{repoTarget ? 'Atualizar destino' : 'Configurar destino'}</button>
         </form>
 
@@ -175,6 +200,7 @@ export function App() {
           <b>{repoTarget.repository}</b>
           <span>{repoTarget.baseBranch} → {repoTarget.targetBranch}</span>
           <span>{repoTarget.pathPrefix || 'repository root'}</span>
+          <span>PR policy: {repoTarget.pullRequestPolicy}{repoTarget.pullRequestDraft ? ' · draft' : ''}</span>
           <button className="secondary" onClick={reviewRepository} disabled={busy}>Gerar diff para revisão</button>
         </div>}
 
@@ -186,6 +212,10 @@ export function App() {
           {repoReview.publishedAt
             ? <div className="published">Publicado em <code>{repoReview.commitSha?.slice(0, 12)}</code></div>
             : <button onClick={publishRepository} disabled={busy}>Aprovar diff e publicar</button>}
+
+          {repoReview.publishedAt && changedFiles.length > 0 && !repoPullRequest && <button className="secondary" onClick={createPullRequest} disabled={busy}>Criar Pull Request</button>}
+          {repoPullRequest && <div className="published"><span>PR #{repoPullRequest.number}{repoPullRequest.draft ? ' · draft' : ''}</span><a href={repoPullRequest.url} target="_blank" rel="noreferrer">Abrir no GitHub</a>{repoPullRequest.reusedExisting && <small>PR existente reutilizado de forma idempotente.</small>}</div>}
+          {session.repository?.pullRequestError && <div className="finding warning"><b>PR_DELIVERY_FAILED</b><span>{session.repository.pullRequestError}</span></div>}
         </div>}
       </section>}
 
