@@ -14,7 +14,7 @@
     "runtime:verify": "tsx src/cli/runtime-source.ts verify",
     "workspace:gc": "tsx src/cli/workspace-gc.ts",
     "workspace:gc:apply": "tsx src/cli/workspace-gc.ts --apply",
-    "test": "tsx --test src/infra/*.test.ts src/mcp/*.test.ts src/server/*.test.ts",
+    "test": "tsx --test src/control-plane/*.test.ts src/infra/*.test.ts src/mcp/*.test.ts src/server/*.test.ts",
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server/index.ts",
     "typecheck": "tsc --noEmit"
