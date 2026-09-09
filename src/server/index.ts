@@ -4,22 +4,46 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ForgeState, SemanticArtifact, SessionSnapshot, ValidationFinding } from '../shared/types.js';
-import { interviewPhases, nextQuestion, phaseFor } from './interview.js';
-import { analyzeTurn } from './model.js';
-import { ForgerMcpClient } from './mcp-client.js';
 import { getProjectDirectory } from '../mcp/project.js';
 import { authenticationMiddleware, principalFromResponse } from './auth.js';
+import {
+  auditMiddleware,
+  configureServerTimeouts,
+  requestContextMiddleware,
+  securityHeadersMiddleware,
+  tenantRateLimitMiddleware
+} from './hardening.js';
+import { interviewPhases, nextQuestion, phaseFor } from './interview.js';
+import { ForgerMcpClient } from './mcp-client.js';
+import { analyzeTurn } from './model.js';
 
 const app = express();
 const mcp = new ForgerMcpClient();
 const port = Number(process.env.PORT ?? 8787);
+const jsonLimit = process.env.FORGER_JSON_LIMIT?.trim() || '1mb';
+const maxMessageChars = Number(process.env.FORGER_MAX_MESSAGE_CHARS ?? 100_000);
 
-app.use(express.json({ limit: '1mb' }));
+app.disable('x-powered-by');
+app.use(requestContextMiddleware);
+app.use(securityHeadersMiddleware);
+app.use(auditMiddleware);
+app.use(express.json({ limit: jsonLimit }));
+
+function errorStatus(error: unknown): number {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Unknown Forger session/.test(message)) return 404;
+  if (/already finalized|Cannot finalize|changed after review|moved after|stale|already published/i.test(message)) return 409;
+  if (/required|invalid|must |too long|exceeded/i.test(message)) return 400;
+  return 500;
+}
 
 function asyncRoute(handler: (req: express.Request, res: express.Response) => Promise<void>) {
   return (req: express.Request, res: express.Response) => void handler(req, res).catch((error) => {
     console.error(error);
-    if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    if (!res.headersSent) res.status(errorStatus(error)).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      requestId: res.locals.requestId
+    });
   });
 }
 
@@ -49,14 +73,15 @@ async function sessionSnapshot(sessionId: string, tenant: string): Promise<Sessi
   };
 }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'semantic-as-code-forger' }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'semantic-as-code-forger', version: '0.6.0' }));
 app.use('/api', (req, res, next) => void authenticationMiddleware(req, res, next));
+app.use('/api', tenantRateLimitMiddleware);
 
 app.post('/api/sessions', asyncRoute(async (req, res) => {
   const tenant = tenantId(res);
   const projectName = String(req.body?.projectName ?? '').trim();
   const summary = String(req.body?.summary ?? '').trim();
-  if (!projectName) { res.status(400).json({ error: 'projectName is required' }); return; }
+  if (!projectName) { res.status(400).json({ error: 'projectName is required', requestId: res.locals.requestId }); return; }
   const sessionId = randomUUID();
   await mcpCall(tenant, 'forger_session_init', { sessionId, projectName, summary });
   const assistantMessage = interviewPhases[0]!.question;
@@ -78,10 +103,12 @@ app.post('/api/sessions/:sessionId/messages', asyncRoute(async (req, res) => {
   const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
   const message = String(req.body?.message ?? '').trim();
-  if (!message) { res.status(400).json({ error: 'message is required' }); return; }
+  if (!message) { res.status(400).json({ error: 'message is required', requestId: res.locals.requestId }); return; }
+  if (!Number.isSafeInteger(maxMessageChars) || maxMessageChars < 1) throw new Error('FORGER_MAX_MESSAGE_CHARS must be a positive integer');
+  if (message.length > maxMessageChars) { res.status(413).json({ error: 'message exceeds configured character limit', requestId: res.locals.requestId }); return; }
 
   const before = await sessionSnapshot(sessionId, tenant);
-  if (before.finalizedAt) { res.status(409).json({ error: 'Session already finalized' }); return; }
+  if (before.finalizedAt) { res.status(409).json({ error: 'Session already finalized', requestId: res.locals.requestId }); return; }
   const phase = phaseFor(before);
   const result = await analyzeTurn(before, phase, message);
 
@@ -118,7 +145,7 @@ app.post('/api/sessions/:sessionId/repository/target', asyncRoute(async (req, re
   const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
   const repository = String(req.body?.repository ?? '').trim();
-  if (!repository) { res.status(400).json({ error: 'repository is required as owner/name' }); return; }
+  if (!repository) { res.status(400).json({ error: 'repository is required as owner/name', requestId: res.locals.requestId }); return; }
   await mcpCall(tenant, 'forger_repository_target_set', {
     sessionId,
     repository,
@@ -142,7 +169,7 @@ app.post('/api/sessions/:sessionId/repository/publish', asyncRoute(async (req, r
   const tenant = tenantId(res);
   const sessionId = routeParam(req, 'sessionId');
   const reviewToken = String(req.body?.reviewToken ?? '').trim();
-  if (!reviewToken) { res.status(400).json({ error: 'reviewToken is required' }); return; }
+  if (!reviewToken) { res.status(400).json({ error: 'reviewToken is required', requestId: res.locals.requestId }); return; }
   await mcpCall(tenant, 'forger_repository_publish', { sessionId, reviewToken });
   res.json(await sessionSnapshot(sessionId, tenant));
 }));
@@ -182,6 +209,7 @@ if (existsSync(clientDir)) {
 }
 
 const server = app.listen(port, () => console.log(`[forger] http://localhost:${port}`));
+configureServerTimeouts(server);
 
 async function shutdown() {
   server.close();
