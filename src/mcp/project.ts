@@ -1,7 +1,8 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
-import { resolve, join, dirname, relative } from 'node:path';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { resolve, join, dirname } from 'node:path';
 import YAML from 'yaml';
 import type { ForgeState, SemanticArtifact, ValidationFinding } from '../shared/types.js';
+import { materializeBehaviorFromPinnedBlueprint, semanticDocument, writeBlueprintProvenance } from './blueprint-source.js';
 
 const root = resolve(process.env.FORGER_WORKSPACE_ROOT ?? '.forger-workspaces');
 
@@ -61,26 +62,41 @@ export async function initializeSession(input: { sessionId: string; projectName:
     updatedAt: now
   };
 
-  await mkdir(projectDir(state.sessionId), { recursive: true });
-  await writeYaml(join(projectDir(state.sessionId), 'manifest.yml'), {
+  const directory = projectDir(state.sessionId);
+  await mkdir(directory, { recursive: true });
+  const blueprint = await writeBlueprintProvenance(directory);
+  await writeYaml(join(directory, 'manifest.yml'), {
     api_version: 'allascode/v1',
     kind: 'Project',
     identity: { canonical_label: state.projectSlug, name: state.projectName, version: '0.1.0' },
     description: state.summary,
-    generation: { source: 'Semantic-as-CodeForger', interview_driven: true }
+    generation: {
+      source: 'Semantic-as-CodeForger',
+      interview_driven: true,
+      blueprint: {
+        repository: blueprint.repository,
+        commit: blueprint.commit,
+        compatibility_profile: blueprint.compatibility.profile
+      }
+    }
   });
-  await writeYaml(join(projectDir(state.sessionId), 'config.yml'), {
+  await writeYaml(join(directory, 'config.yml'), {
     semantics: {
-      result_events: ['Ok', 'Error'],
-      result_events_configurable: false,
-      self_healing_required: true,
-      intent_immutable: true
+      result_events: blueprint.compatibility.terminalEvents,
+      result_events_configurable: blueprint.compatibility.terminalEventsConfigurable,
+      legacy_terminal_aliases_allowed: blueprint.compatibility.legacyTerminalAliasesAllowed,
+      self_healing_required: blueprint.compatibility.selfHealingRequired,
+      intent_immutable: blueprint.compatibility.intentImmutable
     },
-    generation: { preserve_unknowns: true, fabricate_domain_rules: false }
+    generation: {
+      preserve_unknowns: blueprint.compatibility.preserveUnknowns,
+      fabricate_domain_rules: blueprint.compatibility.fabricateDomainRules,
+      blueprint_commit: blueprint.commit
+    }
   });
   await writeText(
-    join(projectDir(state.sessionId), 'README.md'),
-    `# ${state.projectName}\n\n${state.summary || 'AllasCode project forged from a semantic interview.'}\n\n> Generated incrementally by Semantic-as-Code Forger.\n`
+    join(directory, 'README.md'),
+    `# ${state.projectName}\n\n${state.summary || 'AllasCode project forged from a semantic interview.'}\n\n> Generated incrementally by Semantic-as-Code Forger against pinned AllasCode-Blueprint \`${blueprint.commit}\`.\n`
   );
   await saveState(state);
   return state;
@@ -109,47 +125,6 @@ function artifactPath(artifact: SemanticArtifact): string {
   }
 }
 
-function semanticDocument(artifact: SemanticArtifact): Record<string, unknown> {
-  const document: Record<string, unknown> = {
-    api_version: 'allascode/v1',
-    kind: artifact.kind,
-    identity: { canonical_label: artifact.canonicalLabel, version: '0.1.0' },
-    description: artifact.summary,
-    ...artifact.data
-  };
-
-  if (artifact.kind === 'atomic_behavior' || artifact.kind === 'domain_action') {
-    document.events = {
-      listen: typeof artifact.data.listenEvent === 'string' ? [artifact.data.listenEvent] : [],
-      emit: [`${artifact.canonicalLabel}.Ok`, `${artifact.canonicalLabel}.Error`],
-      configurable_terminal_events: false
-    };
-    document.self_healing = { required: true };
-  }
-  return document;
-}
-
-async function materializeBehavior(base: string, artifact: SemanticArtifact): Promise<void> {
-  const dir = dirname(base);
-  const invariants = Array.isArray(artifact.data.invariants) ? artifact.data.invariants : [];
-  const forbidden = Array.isArray(artifact.data.forbidden) ? artifact.data.forbidden : [];
-  const input = artifact.data.input ?? {};
-  const output = artifact.data.output ?? {};
-
-  await writeText(join(dir, 'README.md'), `# ${artifact.canonicalLabel}\n\n${artifact.summary}\n\n## Invariants\n${invariants.map((x) => `- ${String(x)}`).join('\n') || '- To be specified'}\n\n## Must not happen\n${forbidden.map((x) => `- ${String(x)}`).join('\n') || '- To be specified'}\n`);
-  await writeYaml(join(dir, 'config.yml'), { self_healing: { required: true }, result_events: { ok: 'Ok', error: 'Error', configurable: false } });
-  await writeYaml(join(dir, 'interface.yml'), { api_version: 'allascode/v1', kind: 'AtomicBehaviorInterface', behavior: { canonical_label: artifact.canonicalLabel }, input, output });
-  await writeYaml(join(dir, 'schema/input.schema.yml'), { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', additionalProperties: false, semantic_contract: input });
-  await writeYaml(join(dir, 'schema/output.schema.yml'), { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', additionalProperties: false, semantic_contract: output });
-  await writeYaml(join(dir, 'events/Ok.event.yml'), { canonical_label: `${artifact.canonicalLabel}.Ok`, kind: 'result', status: 'Ok', configurable: false });
-  await writeYaml(join(dir, 'events/Error.event.yml'), { canonical_label: `${artifact.canonicalLabel}.Error`, kind: 'result', status: 'Error', configurable: false, self_healing: { required: true } });
-  await writeYaml(join(dir, 'specifications/invariants.spec.yml'), { canonical_label: `${artifact.canonicalLabel}.invariants`, invariants });
-  await writeYaml(join(dir, 'specifications/forbidden.spec.yml'), { canonical_label: `${artifact.canonicalLabel}.forbidden`, forbidden });
-  await writeYaml(join(dir, 'specifications/self-healing.spec.yml'), { canonical_label: `${artifact.canonicalLabel}.selfHealing`, required: true, terminal_error_return: false, fallback: 'Human-in-the-Healing-Loop' });
-  await writeText(join(dir, 'implementation/README.md'), '# Implementation\n\nImplementation is intentionally deferred until the semantic contract is accepted.\n');
-  await writeText(join(dir, 'SKILL.md'), `# ${artifact.canonicalLabel} AtomicAction Behavior Skill\n\nUse this behavior only when its semantic contract, invariants and required capabilities are satisfied. The listened event is injected by the flow. Successful execution emits \`${artifact.canonicalLabel}.Ok\`; failure emits \`${artifact.canonicalLabel}.Error\` and enters the mandatory self-healing pipeline. These terminal events are structural and must not be renamed or configured.\n`);
-}
-
 export async function upsertArtifact(sessionId: string, artifact: SemanticArtifact): Promise<SemanticArtifact> {
   const state = await readState(sessionId);
   const normalized: SemanticArtifact = {
@@ -172,7 +147,7 @@ export async function upsertArtifact(sessionId: string, artifact: SemanticArtifa
     await writeYaml(absolutePath, semanticDocument(normalized));
   }
   if (normalized.kind === 'atomic_behavior' || normalized.kind === 'domain_action') {
-    await materializeBehavior(absolutePath, normalized);
+    await materializeBehaviorFromPinnedBlueprint(absolutePath, normalized);
   }
 
   await saveState(state);
