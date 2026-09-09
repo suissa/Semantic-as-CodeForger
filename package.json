@@ -11,6 +11,8 @@
     "blueprint:verify": "tsx src/cli/blueprint-source.ts verify",
     "blueprint:sync": "tsx src/cli/blueprint-source.ts sync",
     "runtime:verify": "tsx src/cli/runtime-source.ts verify",
+    "workspace:gc": "tsx src/cli/workspace-gc.ts",
+    "workspace:gc:apply": "tsx src/cli/workspace-gc.ts --apply",
     "test": "tsx --test src/mcp/*.test.ts src/server/*.test.ts",
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server/index.ts",
